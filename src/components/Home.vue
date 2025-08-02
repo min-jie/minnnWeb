@@ -13,41 +13,25 @@
       </div>
       
       <!-- 按鈕組 -->
-      <div class="space-y-6 flex flex-col items-center">
+      <div class="flex flex-col items-center">
         <!-- 關於我按鈕 -->
         <button 
           @click="goToAbout"
-          class="text-white font-bold py-6 px-12 rounded-full 
+          class="font-bold rounded-full 
                  transition-all duration-200 hover:scale-105 hover:shadow-xl shadow-md 
-                 flex items-center justify-between w-80 text-lg font-['Noto_Sans_TC'] border-none hover:opacity-90"
-          style="background-color: #52ACD0;"
+                 flex items-center justify-center text-base font-['Noto_Sans_TC'] border-none hover:opacity-90"
+          style="background-color: #52ACD0; color: white; width: 200px; height: 50px; padding: 12px 20px; margin-bottom: 16px;"
         >
-          <span class="flex-1 text-center">關於我</span>
-          <svg 
-            width="24" 
-            height="24" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            xmlns="http://www.w3.org/2000/svg"
-            class="transition-transform duration-200"
-          >
-            <path 
-              d="M13.5 8.5L17 12L13.5 15.5M17 12H7" 
-              stroke="white" 
-              stroke-width="2" 
-              stroke-linecap="round"  
-              stroke-linejoin="round"
-            />
-          </svg>
+          關於我
         </button>
         
         <!-- 我的履歷按鈕 -->
         <button 
           @click="openResume"
-          class="text-white font-bold py-6 px-12 rounded-full 
+          class="font-bold rounded-full 
                  transition-all duration-200 hover:scale-105 hover:shadow-xl shadow-md 
-                 flex items-center justify-center w-80 text-lg font-['Noto_Sans_TC'] border-none hover:opacity-90"
-          style="background-color: #52ACD0;"
+                 flex items-center justify-center text-base font-['Noto_Sans_TC'] border-none hover:opacity-90"
+          style="background-color: #52ACD0; color: white; width: 200px; height: 50px; padding: 12px 20px; margin-bottom: 16px;"
         >
           我的履歷
         </button>
@@ -55,10 +39,10 @@
         <!-- 我的作品集按鈕 -->
         <button 
           @click="openPortfolio"
-          class="text-white font-bold py-6 px-12 rounded-full 
+          class="font-bold rounded-full 
                  transition-all duration-200 hover:scale-105 hover:shadow-xl shadow-md 
-                 flex items-center justify-center w-80 text-lg font-['Noto_Sans_TC'] border-none hover:opacity-90"
-          style="background-color: #52ACD0;"
+                 flex items-center justify-center text-base font-['Noto_Sans_TC'] border-none hover:opacity-90"
+          style="background-color: #52ACD0; color: white; width: 200px; height: 50px; padding: 12px 20px;"
         >
           我的作品集
         </button>
