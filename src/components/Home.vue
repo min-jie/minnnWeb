@@ -4,7 +4,7 @@
     <main class="flex-1 flex flex-col items-center justify-center py-16 px-4 text-center w-full">
       <!-- 歡迎文字 -->
       <h1 class="text-xl leading-relaxed text-gray-500 font-['Noto_Sans_TC'] mb-24">
-        大家好，歡迎來到 Moriii 的網站~
+        大家好，歡迎來到 Minnn 的網站~
       </h1>
       
       <!-- 角色圖片容器 -->
