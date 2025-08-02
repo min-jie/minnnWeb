@@ -78,10 +78,10 @@ const goToAbout = () => {
 }
 
 const openResume = () => {
-  window.open('/履歷_鍾旻倢.pdf', '_blank')
+  window.open('/resume.pdf', '_blank')
 }
 
 const openPortfolio = () => {
-  window.open('/作品集_鍾旻倢.pdf', '_blank')
+  window.open('/portfolio.pdf', '_blank')
 }
 </script>
