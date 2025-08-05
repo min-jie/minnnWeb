@@ -1,14 +1,14 @@
 <template>
   <div class="min-h-screen flex flex-col w-full bg-slate-50 m-0 p-0">
     <NavBar />
-    <main class="flex-1 flex flex-col items-center justify-center py-16 px-4 text-center w-full">
+    <main class="flex-1 flex flex-col items-center justify-center py-16 px-4 text-center w-full space-y-20">
       <!-- 歡迎文字 -->
-      <h1 class="text-xl leading-relaxed text-gray-500 font-['Noto_Sans_TC'] mb-24">
+      <h1 class="text-xl leading-relaxed text-gray-500 font-['Noto_Sans_TC']">
         大家好，歡迎來到 Minnn 的網站~
       </h1>
       
       <!-- 角色圖片容器 -->
-      <div class="p-2 rounded-lg bg-sky-100 mb-10">
+      <div class="p-2 rounded-lg custom-margin-bottom">
         <img src="/character.png" alt="Moriii Character" class="object-contain w-[270px] h-[270px]" />
       </div>
       
