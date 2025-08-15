@@ -41,15 +41,13 @@
         <!-- 專業經歷區塊卡片 -->
         <div class="p-16 bg-white border border-gray-200 rounded-3xl shadow-lg" style="margin: 32px; background: white; border-radius: 24px; padding: 24px 48px;">
           <!-- 專業經驗標題 -->
-          <div class="mb-8">
+          <div class="mb-4">
             <div style="background-color: #52ACD0; border-radius: 12px; padding: 8px 16px; display: inline-block;">
               <h2 style="font-family: 'Noto Sans TC', sans-serif; color: #EEFAFF; font-size: 16px; font-weight: 500; margin: 0;">
                 專業經驗
               </h2>
             </div>
           </div>
-
-          <br><br>
 
           <!-- 經驗列表 -->
           <div class="space-y-4 pl-8">
