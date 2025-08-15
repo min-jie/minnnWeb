@@ -70,7 +70,7 @@
               2022及2023 移動應用創新賽、SwiftUI 前端開發設計
             </p>
             <p class="text-base text-gray-600" style="font-family: 'Noto Sans TC', sans-serif;">
-              NLP 結合學生程式碼懂者營運系統之分析 - 碩士論文
+              基於自然語言處理的學生程式碼審查活動分析之研究 - 碩士論文
             </p>
           </div>
         </div>
