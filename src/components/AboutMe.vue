@@ -69,9 +69,19 @@
             <p class="text-base text-gray-600" style="font-family: 'Noto Sans TC', sans-serif;">
               2022及2023 移動應用創新賽、SwiftUI 前端開發設計
             </p>
-            <p class="text-base text-gray-600" style="font-family: 'Noto Sans TC', sans-serif;">
-              基於自然語言處理的學生程式碼審查活動分析之研究 - 碩士論文
-            </p>
+            <!-- 修改這一行，將論文和按鈕放在同一行 -->
+            <div class="flex items-center">
+              <p class="text-base text-gray-600" style="font-family: 'Noto Sans TC', sans-serif;">
+                基於自然語言處理的學生程式碼審查活動分析之研究 - 碩士論文
+              </p>
+              <button 
+                @click="goToThesis"
+                class="px-12 py-6 text-white text-lg font-semibold transition-all duration-200 hover:opacity-80 shadow-md"
+                style="background-color: #F5A9B4; color: white; border-radius: 20px; font-family: 'Noto Sans TC', sans-serif; border: none; min-width: 120px; min-height: 30px; margin-left: 30px;"
+              >
+                點擊前往
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -80,5 +90,13 @@
 </template>
 
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import NavBar from './NavBar.vue'
+
+const router = useRouter()
+
+const goToThesis = () => {
+  // 或者導航到其他頁面：
+  router.push('/thesis')
+}
 </script>
