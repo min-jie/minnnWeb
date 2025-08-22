@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Home from '../components/Home.vue'
 import AboutMe from '../components/AboutMe.vue'
 import ReviewEngagementGraph from '../components/ReviewEngagementGraph.vue'
+import TextAnalysis from '../components/TextAnalysis.vue'
 
 const routes = [
   {
@@ -21,6 +22,12 @@ const routes = [
     name: 'Thesis',
     component: ReviewEngagementGraph,
     meta: { title: 'Moriii Minnn - 碩士論文' }
+  },
+  {
+    path: '/text-analysis',
+    name: 'TextAnalysis',
+    component: TextAnalysis,
+    meta: { title: 'Moriii Minnn - 文本分析' }
   }
 ]
 
