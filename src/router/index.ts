@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from '../components/Home.vue'
-import AboutMe from '../components/AboutMe.vue'
-import ReviewEngagementGraph from '../components/ReviewEngagementGraph.vue'
+import Home from '../pages/Home.vue'
+import AboutMe from '../pages/AboutMe.vue'
+import ReviewEngagementGraph from '../pages/ReviewEngagementGraph.vue'
 import TextAnalysis from '../components/TextAnalysis.vue'
 
 const routes = [
