@@ -1,0 +1,45 @@
+{
+  "HW1": [
+    {
+      "Author_Name": "StudentA",
+      "Reviewer_Name": "Alice", 
+      "Assignment": "HW1",
+      "Round": [
+        {
+          "Relevance": 0.85,
+          "Concreteness": 0.72,
+          "Constructive": 0.68,
+          "Feedback": "The code structure is well organized."
+        }
+      ]
+    },
+    {
+      "Author_Name": "StudentB", 
+      "Reviewer_Name": "Bob",
+      "Assignment": "HW1", 
+      "Round": [
+        {
+          "Relevance": 0.76,
+          "Concreteness": 0.81,
+          "Constructive": 0.74,
+          "Feedback": "Could improve error handling."
+        }
+      ]
+    }
+  ],
+  "HW2": [
+    {
+      "Author_Name": "StudentC",
+      "Reviewer_Name": "Carol",
+      "Assignment": "HW2",
+      "Round": [
+        {
+          "Relevance": 0.92,
+          "Concreteness": 0.88,
+          "Constructive": 0.85,
+          "Feedback": "Excellent problem-solving approach."
+        }
+      ]
+    }
+  ]
+}

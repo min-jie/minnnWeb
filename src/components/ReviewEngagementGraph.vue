@@ -2,6 +2,63 @@
   <div class="review-engagement-graph">
     <h1>Review Engagement Graph</h1>
     
+    <!-- 檔案上傳區 -->
+    <div class="file-upload-section">
+      <div class="upload-container">
+        <div class="upload-area" 
+             :class="{ 'drag-over': isDragOver }"
+             @dragover.prevent="handleDragOver"
+             @dragleave.prevent="handleDragLeave"
+             @drop.prevent="handleFileDrop"
+             @click="triggerFileInput">
+          
+          <!-- 檔案輸入 -->
+          <input 
+            ref="fileInput"
+            type="file" 
+            accept=".json"
+            @change="handleFileSelect"
+            style="display: none;"
+          />
+          
+          <!-- 上傳區域顯示 -->
+          <div v-if="!uploadedFile" class="upload-placeholder">
+            <div class="upload-icon">📁</div>
+            <p class="upload-text">點擊或拖曳 JSON 檔案到此處</p>
+            <p class="upload-hint">支援 .json 格式</p>
+          </div>
+          
+          <!-- 已上傳檔案顯示 -->
+          <div v-else class="uploaded-file-info">
+            <div class="file-icon">✅</div>
+            <p class="file-name">{{ uploadedFile.name }}</p>
+            <p class="file-size">{{ formatFileSize(uploadedFile.size) }}</p>
+            <button @click.stop="removeFile" class="remove-btn">×</button>
+          </div>
+        </div>
+        
+        <!-- 上傳狀態提示 -->
+        <div v-if="uploadStatus" class="upload-status" :class="uploadStatus.type">
+          {{ uploadStatus.message }}
+        </div>
+        
+        <!-- 處理按鈕：改為直接將解析後的 JSON 包成 payload 發送（不傳檔案本體） -->
+        <button
+          v-if="uploadedFile && !isProcessing"
+          @click="sendJSONPayload"
+          class="process-btn"
+        >
+          🚀 發送到後端推論並生成圖表
+        </button>
+        
+        <!-- 處理中狀態 -->
+        <div v-if="isProcessing" class="processing-indicator">
+          <div class="spinner"></div>
+          <p>正在處理檔案並進行後端推論...</p>
+        </div>
+      </div>
+    </div>
+    
     <!-- Vue 控制的模式切換按鈕 -->
     <div class="switch-bar">
       <button 
@@ -67,6 +124,7 @@
 
 <script>
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { textAnalysisAPI } from '@/services/textAnalysisAPI'
 
 export default {
   name: 'ReviewEngagementGraph',
@@ -85,6 +143,13 @@ export default {
     const bubbleChartManager = ref(null)
     const isInitialized = ref(false)
     
+    // 檔案上傳相關響應式數據
+    const fileInput = ref(null)
+    const uploadedFile = ref(null)
+    const isDragOver = ref(false)
+    const uploadStatus = ref(null)
+    const isProcessing = ref(false)
+    
     const modes = [
       { value: 'all', label: 'All' },
       { value: 'relevance', label: 'Relevance' },
@@ -94,6 +159,268 @@ export default {
 
     // 導入原有的 JavaScript 模組（這些會在後面設置）
     let originalFunctions = {}
+
+    // 檔案上傳相關函數
+    const triggerFileInput = () => {
+      fileInput.value?.click()
+    }
+    
+    const handleFileSelect = (event) => {
+      const file = event.target.files[0]
+      if (file) {
+        validateAndSetFile(file)
+      }
+    }
+    
+    const handleDragOver = (event) => {
+      isDragOver.value = true
+    }
+    
+    const handleDragLeave = (event) => {
+      isDragOver.value = false
+    }
+    
+    const handleFileDrop = (event) => {
+      isDragOver.value = false
+      const files = event.dataTransfer.files
+      if (files.length > 0) {
+        validateAndSetFile(files[0])
+      }
+    }
+    
+    const validateAndSetFile = (file) => {
+      // 檢查檔案類型
+      if (!file.name.toLowerCase().endsWith('.json')) {
+        showUploadStatus('error', '請選擇 JSON 格式的檔案')
+        return
+      }
+      
+      // 檢查檔案大小 (限制 25MB)
+      if (file.size > 25 * 1024 * 1024) {
+        showUploadStatus('error', '檔案大小不能超過 25MB')
+        return
+      }
+      
+      uploadedFile.value = file
+      showUploadStatus('success', '檔案上傳成功！點擊處理按鈕來生成圖表')
+    }
+    
+    const removeFile = () => {
+      uploadedFile.value = null
+      uploadStatus.value = null
+      if (fileInput.value) {
+        fileInput.value.value = ''
+      }
+    }
+    
+    const formatFileSize = (bytes) => {
+      if (bytes === 0) return '0 Bytes'
+      const k = 1024
+      const sizes = ['Bytes', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    }
+    
+    const showUploadStatus = (type, message) => {
+      uploadStatus.value = { type, message }
+      setTimeout(() => {
+        if (uploadStatus.value && uploadStatus.value.message === message) {
+          uploadStatus.value = null
+        }
+      }, 5000)
+    }
+
+    // 將後端/本地 JSON 轉換為舊格式 (hw -> array of original assignments) 的輔助函式
+    const normalizeBackendData = (data) => {
+      try {
+        if (!data || typeof data !== 'object') return null;
+
+        // 將單一陣列做標準化的輔助
+        const extractArray = (arr) => {
+          if (!Array.isArray(arr)) return [];
+          return arr.map((item) => {
+            const original = (item && item.original_data && item.original_data.original)
+              ? item.original_data.original
+              : item;
+            const merged = { ...(original || {}) };
+            // 將 predictions 合併到 assignment 上，後續用於顏色/分數計算的 fallback
+            if (item && item.predictions) merged.__predictions = item.predictions;
+            return merged;
+          });
+        };
+
+        // 格式1：{ data: { results: { HW1: [...] } } }
+        if (data.data && data.data.results && typeof data.data.results === 'object') {
+          const converted = {};
+          Object.keys(data.data.results).forEach((hw) => {
+            converted[hw] = extractArray(data.data.results[hw]);
+          });
+          return converted;
+        }
+
+        // 格式2：{ results: { HW1: [...] } }
+        if (data.results && typeof data.results === 'object') {
+          const converted = {};
+          Object.keys(data.results).forEach((hw) => {
+            converted[hw] = extractArray(data.results[hw]);
+          });
+          return converted;
+        }
+
+        // 格式3：已是舊格式 (第一個 key 的值是陣列)
+        const keys = Object.keys(data);
+        if (keys.length > 0 && Array.isArray(data[keys[0]])) {
+          return data;
+        }
+
+        return null;
+      } catch (err) {
+        console.warn('normalizeBackendData 發生錯誤：', err);
+        return null;
+      }
+    }
+    
+    const sendJSONPayload = async () => {
+      if (!uploadedFile.value) {
+        showUploadStatus('error', '請先上傳或選擇 JSON 檔案')
+        return
+      }
+      isProcessing.value = true
+      try {
+        showUploadStatus('info', '正在讀取檔案並發送 JSON payload...')
+        const fileContent = await readFileAsText(uploadedFile.value)
+        const rawJsonData = JSON.parse(fileContent)
+
+        // 嘗試將各作業資料內的元素規範為 { comment: "..." } 的陣列
+        const formattedAssignmentData = {}
+        try {
+          Object.entries(rawJsonData).forEach(([hwName, items]) => {
+            if (!Array.isArray(items)) {
+              formattedAssignmentData[hwName] = []
+              return
+            }
+            formattedAssignmentData[hwName] = items.map(item => {
+              if (typeof item === 'string') {
+                return { comment: item }
+              }
+              const textField = item.comment ?? item.Comment ?? item.text ?? item.Text ?? item.content ?? item.Content
+              let commentText = ''
+              if (typeof textField === 'string' && textField.trim().length > 0) {
+                commentText = textField
+              } else {
+                for (const val of Object.values(item)) {
+                  if (typeof val === 'string' && val.trim().length > 0) {
+                    commentText = val
+                    break
+                  }
+                }
+              }
+              return { comment: String(commentText ?? ''), original: item }
+            })
+          })
+        } catch (formatErr) {
+          console.warn('sendJSONPayload: 格式化 assignment_data 發生錯誤，將嘗試直接送原始資料', formatErr)
+        }
+
+        console.debug('sendJSONPayload -> payload sample keys:', Object.keys(formattedAssignmentData).slice(0,5))
+        // 使用預設後端位址 http://127.0.0.1:8000
+
+        const apiResp = await textAnalysisAPI.analyzeJSON(formattedAssignmentData)
+        if (!apiResp.success) {
+          // 若後端回 400 並指出缺少文本，嘗試 fallback 為批次 texts 呼叫
+          const errMsg = apiResp.error || '後端推論失敗'
+          console.error('sendJSONPayload: analyzeJSON failed:', errMsg)
+
+          // 收集所有非空 comment 字串
+          const allTexts = []
+          Object.values(formattedAssignmentData).forEach(arr => {
+            if (Array.isArray(arr)) {
+              arr.forEach(obj => {
+                if (obj && typeof obj.comment === 'string' && obj.comment.trim().length > 0) {
+                  allTexts.push(obj.comment)
+                }
+              })
+            }
+          })
+
+          if (allTexts.length > 0) {
+            console.debug('sendJSONPayload: fallback inferTexts, texts count=', allTexts.length)
+            const batchResp = await textAnalysisAPI.inferTexts(allTexts, undefined, [0.5,0.5,0.5])
+            if (!batchResp.success) {
+              throw new Error(batchResp.error || errMsg)
+            }
+            const processedData = batchResp.data
+            rawData.value = processedData
+            availableHW.value = Object.keys(processedData).sort()
+            selectedHW.value = [...availableHW.value]
+            showUploadStatus('success', '後端批次推論完成並已更新圖表資料（請點擊 GO 更新視圖）')
+            return
+          } else {
+            throw new Error(errMsg)
+          }
+        }
+
+        const processedData = apiResp.data?.processed_data ?? apiResp.data
+        if (!processedData) {
+          throw new Error('後端返回處理後數據為空')
+        }
+ 
+        // 正規化後端回傳資料為舊格式
+        let finalData = processedData
+        const normalized = normalizeBackendData(processedData)
+        if (normalized) {
+          finalData = normalized
+        }
+
+        rawData.value = finalData
+        availableHW.value = Object.keys(finalData).sort()
+        selectedHW.value = [...availableHW.value]
+        showUploadStatus('success', '後端推論完成並已更新圖表資料（請點擊 GO 更新視圖）')
+      } catch (err) {
+        console.error('sendJSONPayload failed', err)
+        showUploadStatus('error', err.message || String(err))
+      } finally {
+        isProcessing.value = false
+      }
+    }
+
+    const processUploadedFile = async () => {
+      // 與新流程保持一致：不直接在元件中呼叫 API，改呼叫 service
+      await sendJSONPayload()
+    }
+    
+    const readFileAsText = (file) => {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (e) => resolve(e.target.result)
+        reader.onerror = (e) => reject(new Error('檔案讀取失敗'))
+        reader.readAsText(file, 'UTF-8')
+      })
+    }
+    
+    const validateJsonStructure = (data) => {
+      // 檢查是否為物件且包含作業數據
+      if (typeof data !== 'object' || data === null) {
+        return false
+      }
+      
+      // 檢查是否有至少一個作業
+      const keys = Object.keys(data)
+      if (keys.length === 0) {
+        return false
+      }
+      
+      // 檢查第一個作業的結構
+      const firstKey = keys[0]
+      const firstAssignment = data[firstKey]
+      
+      // 應該是一個陣列
+      if (!Array.isArray(firstAssignment)) {
+        return false
+      }
+      
+      return true
+    }
 
     // 載入並初始化原有的 JavaScript 邏輯
     const loadOriginalScripts = async () => {
@@ -110,10 +437,38 @@ export default {
         }
         
         // 載入您的原有模組（需要將這些文件放到 public 資料夾）
-        await loadScript('/js/bubbleChart.js')
-        await loadScript('/js/graph_func.js')
-        await loadScript('/js/graph_3labelFunc.js')
-        await loadScript('/js/main_graph.js')
+        // 避免重複載入導致 "Identifier ... has already been declared"
+        if (!window.BubbleChartManager) {
+          await loadScript('/js/bubbleChart.js')
+        } else {
+          console.log('↩️ BubbleChartManager 已存在，略過載入')
+        }
+        if (!window.processReviewerData) {
+          await loadScript('/js/graph_func.js')
+        } else {
+          console.log('↩️ processReviewerData 已存在，略過載入')
+        }
+        if (!window.generateAllGraph) {
+          await loadScript('/js/graph_3labelFunc.js')
+        } else {
+          console.log('↩️ generateAllGraph 已存在，略過載入')
+        }
+        if (!window.updateGraphMode) {
+          await loadScript('/js/main_graph.js')
+        } else {
+          console.log('↩️ updateGraphMode 已存在，略過載入')
+        }
+        
+        // 再次確保所有函數都已載入
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // 診斷函數是否正確載入
+        console.log('🔍 檢查函數載入狀態:')
+        console.log('- BubbleChartManager:', typeof window.BubbleChartManager)
+        console.log('- processReviewerData:', typeof window.processReviewerData)
+        console.log('- generateAllGraph:', typeof window.generateAllGraph)
+        console.log('- updateGraphMode:', typeof window.updateGraphMode)
+        console.log('- updateNetworkInstance:', typeof window.updateNetworkInstance)
         
         // 獲取原有函數的引用
         originalFunctions = {
@@ -121,7 +476,8 @@ export default {
           generateRelevanceGraph: window.generateRelevanceGraph,
           generateConcretenessGraph: window.generateConcretenessGraph,
           generateConstructiveGraph: window.generateConstructiveGraph,
-          BubbleChartManager: window.BubbleChartManager
+          BubbleChartManager: window.BubbleChartManager,
+          updateGraphMode: window.updateGraphMode
         }
         
         console.log('✅ 原有腳本載入完成')
@@ -132,56 +488,138 @@ export default {
       }
     }
 
-    // 動態載入腳本的輔助函數
-    const loadScript = (src) => {
+    // 動態載入腳本的輔助函數（避免重複載入造成 "Identifier has already been declared"）
+    const loadScript = (src, isModule = false) => {
       return new Promise((resolve, reject) => {
-        const script = document.createElement('script')
-        script.src = src
-        script.onload = resolve
-        script.onerror = reject
-        document.head.appendChild(script)
-      })
+        // 若已存在相同路徑的 script，直接當作已載入完成（忽略查詢參數）
+        const existed = Array.from(document.getElementsByTagName('script')).find(s => {
+          try {
+            if (!s.src) return false;
+            const u = new URL(s.src, window.location.origin);
+            return u.pathname === src;
+          } catch {
+            return false;
+          }
+        });
+        if (existed) {
+          console.log(`↩️ 已存在腳本：${src}，略過重複載入`);
+          return resolve();
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        if (isModule) script.type = 'module';
+        script.dataset.injectedBy = 'ReviewEngagementGraph';
+        script.onload = () => resolve();
+        script.onerror = (e) => reject(e);
+        document.head.appendChild(script);
+      });
     }
 
     // 載入數據
     const loadData = async () => {
       try {
-        const response = await fetch(props.dataUrl)
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
+        // 若沒有提供 dataUrl 或使用預設 placeholder，先嘗試載入 /js/respone.json，再回退到 /sample-review-data.json
+        if (!props.dataUrl || props.dataUrl === '/api/function/3labeled_processed_totalData.json') {
+          console.log('ℹ️ props.dataUrl 為預設，先嘗試載入 /js/respone.json，再回退到 /sample-review-data.json')
+
+          // 1) 嘗試載入 /js/respone.json（大型回應）
+          try {
+            const resp = await fetch('/js/respone.json')
+            if (resp.ok) {
+              const bigData = await resp.json()
+              let finalData = bigData
+              const normalized = normalizeBackendData(bigData)
+              if (normalized) finalData = normalized
+
+              rawData.value = finalData
+              availableHW.value = Object.keys(finalData).sort()
+              selectedHW.value = [...availableHW.value]
+              console.log('📋 從 /js/respone.json 中發現的作業:', availableHW.value)
+              return true
+            } else {
+              console.warn('⚠️ 無法載入 /js/respone.json，HTTP status:', resp.status)
+            }
+          } catch (e) {
+            console.warn('⚠️ 嘗試載入 /js/respone.json 失敗:', e.message)
+          }
+
+          // 2) 回退到 /sample-review-data.json
+          try {
+            const sampleResp = await fetch('/sample-review-data.json')
+            if (sampleResp.ok) {
+              const sampleData = await sampleResp.json()
+              let finalData = sampleData
+              const normalized = normalizeBackendData(sampleData)
+              if (normalized) finalData = normalized
+
+              rawData.value = finalData
+              availableHW.value = Object.keys(finalData).sort()
+              selectedHW.value = [...availableHW.value]
+              console.log('📋 從 sample-review-data.json 中發現的作業:', availableHW.value)
+              return true
+            } else {
+              console.warn('⚠️ 無法載入 /sample-review-data.json，HTTP status:', sampleResp.status)
+            }
+          } catch (e) {
+            console.warn('⚠️ 嘗試載入 /sample-review-data.json 失敗:', e.message)
+          }
         }
-        const data = await response.json()
-        rawData.value = data
         
-        // 動態獲取作業列表
-        availableHW.value = Object.keys(data).sort()
-        selectedHW.value = [...availableHW.value] // 預設全選
+        // 若 props.dataUrl 有有效值（非預設），嘗試從該 URL 載入
+        if (props.dataUrl && props.dataUrl !== '/api/function/3labeled_processed_totalData.json') {
+          const response = await fetch(props.dataUrl)
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          const data = await response.json()
+
+          // 正規化為舊格式
+          let finalData = data
+          const normalized = normalizeBackendData(data)
+          if (normalized) {
+            finalData = normalized
+          }
+
+          rawData.value = finalData
+          // 動態獲取作業列表
+          availableHW.value = Object.keys(finalData).sort()
+          selectedHW.value = [...availableHW.value] // 預設全選
+          console.log('📋 從 dataUrl 載入的作業:', availableHW.value)
+          return true
+        }
         
-        console.log('📋 從JSON檔案中發現的作業:', availableHW.value)
+        // 若沒有有效 dataUrl 且 sample 載入失敗，直接返回 true（等待使用者上傳）
+        console.log('⏭️ 未載入任何自動資料，等待使用者上傳檔案')
         return true
       } catch (error) {
-        console.error('❌ 載入數據失敗:', error)
-        return false
+        console.warn('⚠️ 自動數據載入失敗，等待使用者上傳檔案:', error.message)
+        return true // 即使載入失敗也返回 true，讓組件繼續運行
       }
     }
 
     // 初始化圖表
     const initializeGraphs = async () => {
-      if (!rawData.value || !originalFunctions.BubbleChartManager) {
-        console.warn('⚠️ 數據或函數尚未載入')
+      if (!originalFunctions.BubbleChartManager) {
+        console.warn('⚠️ 函數尚未載入，無法初始化圖表')
         return
       }
       
       try {
-        // 初始化 Bubble Chart
-        bubbleChartManager.value = new originalFunctions.BubbleChartManager()
-        
-        // 初始化網路圖
-        await nextTick() // 確保 DOM 已更新
-        updateGraphMode('all')
+        // 如果有數據，初始化圖表
+        if (rawData.value) {
+          // 初始化 Bubble Chart
+          bubbleChartManager.value = new originalFunctions.BubbleChartManager('bubbleChart')
+          
+          // 初始化網路圖
+          await nextTick() // 確保 DOM 已更新
+          updateGraphMode('all')
+          
+          console.log('✅ 圖表初始化完成（含數據）')
+        } else {
+          console.log('ℹ️ 圖表組件準備就緒，等待數據上傳')
+        }
         
         isInitialized.value = true
-        console.log('✅ 圖表初始化完成')
       } catch (error) {
         console.error('❌ 圖表初始化失敗:', error)
       }
@@ -189,7 +627,13 @@ export default {
 
     // 圖表模式切換（調用原有邏輯）
     const updateGraphMode = (mode) => {
-      if (!rawData.value || !isInitialized.value) {
+      if (!rawData.value) {
+        console.log(`ℹ️ 切換到 ${mode} 模式，但尚無數據可顯示`)
+        currentMode.value = mode
+        return
+      }
+      
+      if (!isInitialized.value) {
         console.warn('⚠️ 圖表尚未初始化')
         return
       }
@@ -200,19 +644,25 @@ export default {
       console.log(`🔄 切換到 ${mode} 模式，作業: ${hwNames.join(',')}`)
       
       try {
-        switch(mode) {
-          case 'all':
-            originalFunctions.generateAllGraph(rawData.value, hwNames)
-            break
-          case 'relevance':
-            originalFunctions.generateRelevanceGraph(rawData.value, hwNames)
-            break
-          case 'concreteness':
-            originalFunctions.generateConcretenessGraph(rawData.value, hwNames)
-            break
-          case 'constructive':
-            originalFunctions.generateConstructiveGraph(rawData.value, hwNames)
-            break
+        // 使用 originalFunctions.updateGraphMode 統一處理
+        if (originalFunctions.updateGraphMode) {
+          originalFunctions.updateGraphMode(mode, hwNames, rawData.value)
+        } else {
+          // 備用方案：直接調用個別函數
+          switch(mode) {
+            case 'all':
+              originalFunctions.generateAllGraph(rawData.value, hwNames)
+              break
+            case 'relevance':
+              originalFunctions.generateRelevanceGraph(rawData.value, hwNames)
+              break
+            case 'concreteness':
+              originalFunctions.generateConcretenessGraph(rawData.value, hwNames)
+              break
+            case 'constructive':
+              originalFunctions.generateConstructiveGraph(rawData.value, hwNames)
+              break
+          }
         }
         
         // 更新氣泡圖
@@ -224,20 +674,41 @@ export default {
 
     // 更新氣泡圖
     const updateBubbleChart = (hwNames) => {
-      if (!bubbleChartManager.value || !rawData.value) return
+      if (!bubbleChartManager.value || !rawData.value) {
+        console.log('⏭️ 跳過氣泡圖更新：管理器或數據不存在')
+        return
+      }
       
       try {
-        // 準備氣泡圖數據（這裡需要複製原有的數據準備邏輯）
-        const networkData = prepareNetworkDataForBubbleChart(hwNames)
-        if (networkData) {
-          bubbleChartManager.value.updateData(networkData)
+        console.log('🔄 開始更新氣泡圖...')
+        
+        // 過濾數據只包含選定的作業
+        const filteredData = {}
+        hwNames.forEach(assignment => {
+          if (rawData.value[assignment]) {
+            filteredData[assignment] = rawData.value[assignment]
+          }
+        })
+
+        // 檢查過濾後的數據是否有效
+        if (Object.keys(filteredData).length === 0) {
+          console.warn('⚠️ 過濾後的數據為空，跳過氣泡圖更新')
+          return
         }
+
+        // 使用 init 方法重新初始化氣泡圖
+        bubbleChartManager.value.init(filteredData, currentMode.value)
+        
+        console.log('✅ 氣泡圖更新完成')
       } catch (error) {
         console.error('❌ 氣泡圖更新失敗:', error)
+        // 不再拋出錯誤，避免中斷整個流程
+        showUploadStatus('warning', '氣泡圖更新失敗，請重新載入頁面後再試')
       }
     }
 
-    // 準備氣泡圖數據（從原有代碼複製）
+    // 準備氣泡圖數據（從原有代碼複製）- 不再使用，因為 BubbleChartManager.init() 直接處理原始數據
+    /*
     const prepareNetworkDataForBubbleChart = (hwNames) => {
       if (!rawData.value) return null
       
@@ -278,6 +749,7 @@ export default {
       
       return Array.from(studentData.values())
     }
+    */
 
     // 應用選擇
     const applySelection = () => {
@@ -366,7 +838,24 @@ export default {
       updateGraphMode,
       applySelection,
       exportBubbleChart,
-      isInitialized
+      isInitialized,
+      // 檔案上傳相關
+      fileInput,
+      uploadedFile,
+      isDragOver,
+      uploadStatus,
+      isProcessing,
+      triggerFileInput,
+      handleFileSelect,
+      handleDragOver,
+      handleDragLeave,
+      handleFileDrop,
+      removeFile,
+      formatFileSize,
+      // 將 API 呼叫集中於 service，模板直接呼叫此函式
+      sendJSONPayload,
+      // 保留舊流程入口（內部轉呼叫 sendJSONPayload）
+      processUploadedFile
     }
   }
 }
