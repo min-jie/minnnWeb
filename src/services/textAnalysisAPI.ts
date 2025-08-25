@@ -1,4 +1,5 @@
-// src/services/textAnalysisAPI.ts
+ // src/services/textAnalysisAPI.ts
+import { apiConfig } from './apiConfig'
 export interface AnalysisThresholds {
   relevance: number;
   concreteness: number;
@@ -36,21 +37,20 @@ export interface APIResponse<T = any> {
 }
 
 export class TextAnalysisAPI {
-  private baseURL: string;
-
-  constructor(baseURL = 'http://127.0.0.1:8000') {
-    this.baseURL = baseURL;
+  constructor() {
+    // 統一由 apiConfig 管理 baseURL
+    // 若需要預設值，請在 apiConfig 中設定
   }
 
-  // 更新 API 地址
+  // 更新 API 地址（代理至集中設定）
   updateBaseURL(url: string) {
-    this.baseURL = url;
+    apiConfig.setBaseURL(url);
   }
 
   // 測試 API 連接
   async testConnection(): Promise<APIResponse<{ message: string }>> {
     try {
-      const response = await fetch(`${this.baseURL}/health`);
+      const response = await fetch(`${apiConfig.getBaseURL()}/health`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -75,7 +75,7 @@ export class TextAnalysisAPI {
       // 日誌：印出即將送出的 payload，方便確認前端解析結果
       console.debug('textAnalysisAPI.analyzeJSON -> sending payload:', payloadToSend)
 
-      const response = await fetch(`${this.baseURL}/infer`, {
+      const response = await fetch(`${apiConfig.getBaseURL()}/infer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,7 +129,7 @@ export class TextAnalysisAPI {
   // 獲取模型資訊
   async getModelInfo(): Promise<APIResponse<any>> {
     try {
-      const response = await fetch(`${this.baseURL}/model_info`);
+      const response = await fetch(`${apiConfig.getBaseURL()}/model_info`);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -149,7 +149,7 @@ export class TextAnalysisAPI {
       const payloadToSend = { text, thresholds }
       console.debug('textAnalysisAPI.inferText -> sending payload:', payloadToSend)
 
-      const response = await fetch(`${this.baseURL}/infer`, {
+      const response = await fetch(`${apiConfig.getBaseURL()}/infer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payloadToSend)
@@ -185,7 +185,7 @@ export class TextAnalysisAPI {
 
       console.debug('textAnalysisAPI.inferTexts -> sending payload sample:', { texts_count: texts.length, batch_size, thresholds })
 
-      const response = await fetch(`${this.baseURL}/infer`, {
+      const response = await fetch(`${apiConfig.getBaseURL()}/infer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)

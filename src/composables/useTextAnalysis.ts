@@ -1,6 +1,7 @@
 // src/composables/useTextAnalysis.ts
 import { ref, computed, type Ref } from 'vue'
 import { textAnalysisAPI, type AnalysisResults, type AnalysisThresholds, type AnalysisItem } from '../services/textAnalysisAPI'
+import { apiConfig } from '../services/apiConfig'
 
 export function useTextAnalysis() {
   // 反應式狀態
@@ -9,7 +10,7 @@ export function useTextAnalysis() {
   const analysisResults: Ref<AnalysisResults | null> = ref(null)
   const analysisError = ref('')
   const apiConnected = ref(false)
-  const apiUrl = ref('http://127.0.0.1:8000')
+  const apiUrl = apiConfig.baseURL
   
   const thresholds = ref<AnalysisThresholds>({
     relevance: 0.5,
@@ -123,7 +124,6 @@ export function useTextAnalysis() {
   // 方法
   const testConnection = async (): Promise<boolean> => {
     try {
-      textAnalysisAPI.updateBaseURL(apiUrl.value)
       const result = await textAnalysisAPI.testConnection()
       
       if (result.success) {
