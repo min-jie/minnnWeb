@@ -261,7 +261,10 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  文本內容
+                  作業/作業ID
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  回饋內容
                 </th>
                 <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   相關性
@@ -276,9 +279,13 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-for="(item, index) in allResults.slice(0, 20)" :key="index" class="hover:bg-gray-50">
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  <div class="font-medium">{{ item.homework || 'N/A' }}</div>
+                  <div v-if="item.assignment_id" class="text-xs text-gray-500">ID: {{ item.assignment_id }}</div>
+                </td>
                 <td class="px-6 py-4 text-sm text-gray-900 max-w-xs">
                   <div class="truncate" :title="item.text">
-                    {{ item.text.length > 100 ? item.text.substring(0, 100) + '...' : item.text }}
+                    {{ item.text.length > 80 ? item.text.substring(0, 80) + '...' : item.text }}
                   </div>
                 </td>
                 <td class="px-6 py-4 text-center">
@@ -379,16 +386,16 @@ const lineChart = ref<HTMLCanvasElement>()
 let barChartInstance: Chart | null = null
 let lineChartInstance: Chart | null = null
 
-const handleFileChange = (event: Event) => {
+const handleFileChange = async (event: Event) => {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0] || null
-  handleFileSelect(file)
+  await handleFileSelect(file)
 }
 
-const handleFileDrop = (event: DragEvent) => {
+const handleFileDrop = async (event: DragEvent) => {
   isDragOver.value = false
   const file = event.dataTransfer?.files[0] || null
-  handleFileSelect(file)
+  await handleFileSelect(file)
 }
 
 const createCharts = () => {

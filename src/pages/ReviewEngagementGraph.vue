@@ -2,60 +2,90 @@
   <div class="review-engagement-graph">
     <h1>Review Engagement Graph</h1>
     
-    <!-- 檔案上傳區 -->
-    <div class="file-upload-section">
-      <div class="upload-container">
-    <div class="upload-area" 
-         :class="{ 'drag-over': isDragOver }"
-         @dragover.prevent="handleDragOver"
-         @dragleave.prevent="handleDragLeave"
-         @drop.prevent="handleFileDrop"
-             @click="triggerFileInput">
-          
-          <!-- 檔案輸入 -->
-          <input 
-            ref="fileInput"
-            type="file" 
-            accept=".json"
-            @change="handleFileSelect"
-            style="display: none;"
-          />
-          
-          <!-- 上傳區域顯示 -->
-          <div v-if="!uploadedFile" class="upload-placeholder">
-            <div class="upload-icon">📁</div>
-            <p class="upload-text">點擊或拖曳 JSON 檔案到此處</p>
-            <p class="upload-hint">支援 .json 格式</p>
+    <!-- 上傳檔案區域 -->
+    <div class="upload-file-section">
+      <div class="upload-section-container">
+        <h3 class="upload-section-title">上傳檔案區</h3>
+        
+        <div class="upload-area-wrapper">
+          <div class="upload-area" 
+               :class="{ 
+                 'drag-over': isDragOver,
+                 'has-file': uploadedFile,
+                 'upload-success': uploadedFile && uploadStatus?.type === 'success'
+               }"
+               @dragover.prevent="handleDragOver"
+               @dragleave.prevent="handleDragLeave"
+               @drop.prevent="handleFileDrop"
+               @click="triggerFileInput">
+            
+            <!-- 檔案輸入 -->
+            <input 
+              ref="fileInput"
+              type="file" 
+              accept=".json"
+              @change="handleFileSelect"
+              style="display: none;"
+            />
+            
+            <!-- 上傳區域顯示 -->
+            <div v-if="!uploadedFile" class="upload-placeholder">
+              <div class="upload-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M7 18a4.6 4.4 0 0 1 0-9 5 5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7H7z"/>
+                  <path d="m9 15 3-3 3 3"/>
+                  <path d="M12 12v9"/>
+                </svg>
+              </div>
+              <p class="upload-text">點擊或拖曳檔案到此處</p>
+              <p class="upload-hint">支援 JSON 格式檔案</p>
+            </div>
+            
+            <!-- 已上傳檔案顯示 -->
+            <div v-else class="uploaded-file-info">
+              <div class="file-success-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 11l3 3 8-8"/>
+                  <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c1.306 0 2.54.279 3.66.775"/>
+                </svg>
+              </div>
+              <p class="file-name">{{ uploadedFile.name }}</p>
+              <p class="file-size">{{ formatFileSize(uploadedFile.size) }}</p>
+              <button @click.stop="removeFile" class="remove-btn">重新選擇檔案</button>
+            </div>
           </div>
           
-          <!-- 已上傳檔案顯示 -->
-          <div v-else class="uploaded-file-info">
-            <div class="file-icon">✅</div>
-            <p class="file-name">{{ uploadedFile.name }}</p>
-            <p class="file-size">{{ formatFileSize(uploadedFile.size) }}</p>
-            <button @click.stop="removeFile" class="remove-btn">×</button>
+          <!-- 上傳成功狀態 -->
+          <div v-if="uploadedFile && uploadStatus?.type === 'success'" class="upload-success-message">
+            <div class="success-icon">✓</div>
+            <span>檔案上傳成功！</span>
+          </div>
+          
+          <!-- 錯誤狀態 -->
+          <div v-if="uploadStatus?.type === 'error'" class="upload-error-message">
+            <div class="error-icon">✗</div>
+            <span>{{ uploadStatus.message }}</span>
           </div>
         </div>
-        
-        <!-- 上傳狀態提示 -->
-        <div v-if="uploadStatus" class="upload-status" :class="uploadStatus.type">
-          {{ uploadStatus.message }}
-        </div>
-        
-        <!-- 處理按鈕：改為直接將解析後的 JSON 包成 payload 發送（不傳檔案本體） -->
-        <button
-          v-if="uploadedFile && !isProcessing"
-          @click="sendJSONPayload"
-          class="process-btn"
-        >
-          🚀 發送到後端推論並生成圖表
-        </button>
-        
-        <!-- 處理中狀態 -->
-        <div v-if="isProcessing" class="processing-indicator">
-          <div class="spinner"></div>
-          <p>正在處理檔案並進行後端推論...</p>
-        </div>
+      </div>
+    </div>
+
+    <!-- 進行資料處理區域 -->
+    <div class="processing-section">
+      <!-- 處理按鈕 -->
+      <button
+        v-if="uploadedFile && !isProcessing"
+        @click="sendJSONPayload"
+        class="process-btn"
+        :disabled="!uploadedFile"
+      >
+        進行資料處理
+      </button>
+      
+      <!-- 處理中狀態 -->
+      <div v-if="isProcessing" class="processing-indicator">
+        <div class="spinner"></div>
+        <p>處理中...</p>
       </div>
     </div>
     
@@ -75,7 +105,7 @@
     <div id="review-graph-container">
       <div class="floating-panel">
         <label for="hw-select" class="assignment-label">Assignment</label>
-        <button @click="applySelection" id="hw-apply-btn">GO</button>
+        <button @click="applySelection" id="hw-apply-btn">生成圖表</button>
         <select 
           id="hw-select" 
           v-model="selectedHW" 
@@ -782,6 +812,249 @@ h1 {
   text-align: center;
   color: #333;
   margin: 20px 0;
+  font-size: 2.5rem;
+  font-weight: 600;
+}
+
+/* 檔案上傳區域樣式 */
+.upload-file-section {
+  max-width: 800px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.upload-section-container {
+  background: white;
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 2px solid #f0f0f0;
+}
+
+.upload-section-title {
+  text-align: center;
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 30px;
+}
+
+.upload-area-wrapper {
+  position: relative;
+}
+
+.upload-area {
+  border: 2px dashed #d1d5db;
+  border-radius: 16px;
+  padding: 60px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #fafafa;
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-area:hover {
+  border-color: #9ca3af;
+  background: #f5f5f5;
+  transform: translateY(-2px);
+}
+
+.upload-area.drag-over {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  transform: scale(1.02);
+}
+
+.upload-area.has-file {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.upload-area.upload-success {
+  border-color: #10b981;
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.upload-icon {
+  color: #6b7280;
+  opacity: 0.7;
+}
+
+.upload-text {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+}
+
+.upload-hint {
+  font-size: 1.1rem;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.uploaded-file-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-success-icon {
+  color: #10b981;
+  margin-bottom: 8px;
+}
+
+.file-name {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+  word-break: break-all;
+}
+
+.file-size {
+  font-size: 1rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.remove-btn {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.remove-btn:hover {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.upload-success-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.success-icon {
+  background: #10b981;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.upload-error-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.error-icon {
+  background: #ef4444;
+  color: white;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+/* 進行資料處理區域樣式 */
+.processing-section {
+  max-width: 800px;
+  margin: 30px auto;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.process-btn {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  color: white;
+  border: none;
+  padding: 20px 60px;
+  font-size: 1.4rem;
+  font-weight: 600;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.process-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.process-btn:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.processing-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f3f4f6;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.processing-indicator p {
+  color: #6b7280;
+  font-size: 1.1rem;
+  margin: 0;
 }
 
 .switch-bar {

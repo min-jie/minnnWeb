@@ -1,7 +1,47 @@
 // src/composables/useTextAnalysis.ts
 import { ref, computed, type Ref } from 'vue'
-import { textAnalysisAPI, type AnalysisResults, type AnalysisThresholds, type AnalysisItem } from '../services/textAnalysisAPI'
+import { textAnalysisAPI, type APIResponse } from '../services/textAnalysisAPI'
 import { apiConfig } from '../services/apiConfig'
+
+// 簡化的型別定義
+export interface AnalysisThresholds {
+  relevance: number
+  concreteness: number
+  constructive: number
+}
+
+export interface AnalysisResults {
+  status?: string
+  data?: any
+  detailed_results?: Array<{
+    homework: string
+    assignment_id: string
+    feedback: string
+    relevance: number
+    concreteness: number
+    constructive: number
+    relevance_confidence: number
+    concreteness_confidence: number
+    constructive_confidence: number
+  }>
+  total_feedbacks?: number
+  total_processed?: number
+  thresholds_used?: number[]
+}
+
+export interface AnalysisItem {
+  text: string
+  homework?: string
+  assignment_id?: string
+  predictions: {
+    relevance: boolean
+    relevance_confidence: number
+    concreteness: boolean
+    concreteness_confidence: number
+    constructive: boolean
+    constructive_confidence: number
+  }
+}
 
 export function useTextAnalysis() {
   // 反應式狀態
@@ -21,24 +61,46 @@ export function useTextAnalysis() {
   // 計算屬性
   const totalTexts = computed(() => {
     if (!analysisResults.value) return 0
-    return analysisResults.value.total_processed
+    
+    // 新 API 格式
+    if (analysisResults.value.total_feedbacks !== undefined) {
+      return analysisResults.value.total_feedbacks
+    }
+    
+    // 舊格式向後相容
+    if (analysisResults.value.total_processed !== undefined) {
+      return analysisResults.value.total_processed
+    }
+    
+    // 從詳細結果計算
+    if (analysisResults.value.detailed_results) {
+      return analysisResults.value.detailed_results.length
+    }
+    
+    return 0
   })
 
   const allResults = computed((): AnalysisItem[] => {
     if (!analysisResults.value) return []
-    const results: AnalysisItem[] = []
     
-    const entries = Object.entries(analysisResults.value.results as Record<string, AnalysisItem[]>)
-    entries.forEach(([hwName, items]) => {
-      items.forEach((item: AnalysisItem) => {
-        results.push({
-          ...item,
-          homework: hwName
-        } as AnalysisItem & { homework: string })
-      })
-    })
-    
-    return results
+    // 處理新 API 格式的 detailed_results
+    if (analysisResults.value.detailed_results && Array.isArray(analysisResults.value.detailed_results)) {
+      return analysisResults.value.detailed_results.map((item: any) => ({
+        text: item.feedback,
+        predictions: {
+          relevance: item.relevance === 1,
+          relevance_confidence: item.relevance_confidence,
+          concreteness: item.concreteness === 1,
+          concreteness_confidence: item.concreteness_confidence,
+          constructive: item.constructive === 1,
+          constructive_confidence: item.constructive_confidence
+        },
+        homework: item.homework,
+        assignment_id: item.assignment_id
+      }))
+    }
+
+    return []
   })
 
   const statisticsData = computed(() => {
@@ -68,59 +130,6 @@ export function useTextAnalysis() {
     return stats
   })
 
-  const chartData = computed(() => {
-    const stats = statisticsData.value
-    return {
-      labels: ['相關性', '具體性', '建設性'],
-      datasets: [{
-        label: '正面標籤數量',
-        data: [stats.relevance, stats.concreteness, stats.constructive],
-        backgroundColor: [
-          'rgba(59, 130, 246, 0.8)',  // Blue
-          'rgba(34, 197, 94, 0.8)',   // Green
-          'rgba(245, 158, 11, 0.8)'   // Amber
-        ],
-        borderColor: [
-          'rgba(59, 130, 246, 1)',
-          'rgba(34, 197, 94, 1)',
-          'rgba(245, 158, 11, 1)'
-        ],
-        borderWidth: 2
-      }]
-    }
-  })
-
-  const confidenceChartData = computed(() => {
-    const results = allResults.value.slice(0, 50) // 限制顯示數量避免圖表過擠
-    
-    return {
-      labels: results.map((_, index) => `#${index + 1}`),
-      datasets: [
-        {
-          label: '相關性信心度',
-          data: results.map(r => r.predictions.relevance_confidence),
-          borderColor: 'rgba(59, 130, 246, 1)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          tension: 0.4
-        },
-        {
-          label: '具體性信心度',
-          data: results.map(r => r.predictions.concreteness_confidence),
-          borderColor: 'rgba(34, 197, 94, 1)',
-          backgroundColor: 'rgba(34, 197, 94, 0.1)',
-          tension: 0.4
-        },
-        {
-          label: '建設性信心度',
-          data: results.map(r => r.predictions.constructive_confidence),
-          borderColor: 'rgba(245, 158, 11, 1)',
-          backgroundColor: 'rgba(245, 158, 11, 0.1)',
-          tension: 0.4
-        }
-      ]
-    }
-  })
-
   // 方法
   const testConnection = async (): Promise<boolean> => {
     try {
@@ -142,27 +151,30 @@ export function useTextAnalysis() {
     }
   }
 
-  const handleFileSelect = (file: File | null): boolean => {
+  const handleFileSelect = async (file: File | null): Promise<boolean> => {
     if (!file) {
       selectedFile.value = null
       analysisError.value = ''
       return false
     }
 
-    if (!file.name.endsWith('.json')) {
-      analysisError.value = '請選擇 JSON 格式的檔案'
-      selectedFile.value = null
-      return false
-    }
-
-    if (file.size > 10 * 1024 * 1024) { // 10MB 限制
-      analysisError.value = '檔案大小不能超過 10MB'
+    // 使用新的檔案驗證方法
+    const validation = textAnalysisAPI.validateFile(file)
+    if (!validation.valid) {
+      analysisError.value = validation.error || '檔案驗證失敗'
       selectedFile.value = null
       return false
     }
 
     selectedFile.value = file
     analysisError.value = ''
+    
+    console.log('✅ 檔案選擇成功:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    })
+    
     return true
   }
 
@@ -182,16 +194,10 @@ export function useTextAnalysis() {
     analysisResults.value = null
 
     try {
-      // 讀取檔案
-      const jsonData = await textAnalysisAPI.readFileAsJSON(selectedFile.value)
+      console.log('🚀 開始上傳檔案進行分析...')
       
-      // 驗證資料格式
-      if (typeof jsonData !== 'object' || jsonData === null) {
-        throw new Error('無效的 JSON 格式')
-      }
-
-      // 發送分析請求
-      const result = await textAnalysisAPI.analyzeJSON(jsonData, [
+      // 直接上傳檔案，不在前端解析
+      const result = await textAnalysisAPI.uploadFileForAnalysis(selectedFile.value, [
         thresholds.value.relevance,
         thresholds.value.concreteness,
         thresholds.value.constructive
@@ -199,6 +205,7 @@ export function useTextAnalysis() {
 
       if (result.success && result.data) {
         analysisResults.value = result.data
+        console.log('✅ 分析完成！結果:', result.data)
         return true
       } else {
         analysisError.value = result.error || '分析失敗'
@@ -219,7 +226,8 @@ export function useTextAnalysis() {
     const results = allResults.value
     const headers = [
       '作業名稱',
-      '文本內容',
+      '作業ID',
+      '回饋內容',
       '相關性',
       '相關性信心度',
       '具體性',
@@ -231,9 +239,9 @@ export function useTextAnalysis() {
     const csvContent = [
       headers.join(','),
       ...results.map(item => {
-        const homework = (item as any).homework || ''
         return [
-          `"${homework}"`,
+          `"${item.homework || ''}"`,
+          `"${item.assignment_id || ''}"`,
           `"${item.text.replace(/"/g, '""')}"`,
           item.predictions.relevance ? '1' : '0',
           item.predictions.relevance_confidence.toFixed(3),
@@ -298,8 +306,6 @@ export function useTextAnalysis() {
     totalTexts,
     allResults,
     statisticsData,
-    chartData,
-    confidenceChartData,
     
     // 方法
     testConnection,
