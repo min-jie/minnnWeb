@@ -11,6 +11,7 @@ export interface AnalysisThresholds {
 }
 
 export interface AnalysisResults {
+  upload_info: any
   status?: string
   data?: any
   detailed_results?: Array<{

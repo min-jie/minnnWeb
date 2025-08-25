@@ -66,6 +66,48 @@
             <div class="error-icon">✗</div>
             <span>{{ uploadStatus.message }}</span>
           </div>
+
+          <!-- 上傳檔案到後端按鈕 -->
+          <div v-if="uploadedFile && !isUploading" class="upload-to-backend-section">
+            <button
+              @click="uploadFileToBackend"
+              class="upload-to-backend-btn"
+              :disabled="!uploadedFile || isUploading"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7,10 12,15 17,10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              上傳檔案到後端
+            </button>
+          </div>
+
+          <!-- 上傳中狀態 -->
+          <div v-if="isUploading" class="uploading-indicator">
+            <div class="upload-spinner"></div>
+            <p>正在上傳到後端...</p>
+          </div>
+
+          <!-- 上傳到後端成功訊息 -->
+          <div v-if="backendUploadResult" class="backend-upload-success">
+            <div class="success-icon">✓</div>
+            <div class="upload-result-content">
+              <p class="upload-result-title">檔案已成功上傳到 Firebase Storage！</p>
+              <div class="upload-result-details">
+                <p><strong>檔案路徑:</strong> {{ backendUploadResult.data?.name }}</p>
+                <p v-if="backendUploadResult.data?.public_url">
+                  <strong>公開連結:</strong> 
+                  <a :href="backendUploadResult.data.public_url" target="_blank" class="upload-link">
+                    查看檔案
+                  </a>
+                </p>
+                <p v-else-if="backendUploadResult.data?.gs_uri">
+                  <strong>Storage URI:</strong> {{ backendUploadResult.data.gs_uri }}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -179,6 +221,8 @@ const uploadedFile = ref<File | null>(null)
 const isDragOver = ref(false)
 const uploadStatus = ref<{type: string, message: string} | null>(null)
 const isProcessing = ref(false)
+const isUploading = ref(false)
+const backendUploadResult = ref<any>(null)
 
 const modes = [
   { value: 'all', label: 'All' },
@@ -233,14 +277,49 @@ const validateAndSetFile = (file: File) => {
   }
   
   uploadedFile.value = file
-  showUploadStatus('success', '檔案上傳成功！點擊處理按鈕來生成圖表')
+  // 清除之前的後端上傳結果
+  backendUploadResult.value = null
+  showUploadStatus('success', '檔案選擇成功！')
 }
 
 const removeFile = () => {
   uploadedFile.value = null
   uploadStatus.value = null
+  backendUploadResult.value = null
   if (fileInput.value) {
     fileInput.value.value = ''
+  }
+}
+
+// 新增：上傳檔案到後端的函數
+const uploadFileToBackend = async () => {
+  if (!uploadedFile.value) {
+    showUploadStatus('error', '請先選擇檔案')
+    return
+  }
+
+  isUploading.value = true
+  try {
+    console.log('🚀 開始上傳檔案到後端:', uploadedFile.value.name)
+    
+    const result = await textAnalysisAPI.uploadFileToStorage(
+      uploadedFile.value, 
+      `data/${uploadedFile.value.name}`
+    )
+    
+    if (result.success) {
+      backendUploadResult.value = result
+      showUploadStatus('success', '檔案已成功上傳到 Firebase Storage！')
+      console.log('✅ 檔案上傳成功，資料結構:', result.data)
+    } else {
+      throw new Error(result.error || '上傳失敗')
+    }
+  } catch (error: any) {
+    console.error('❌ 檔案上傳失敗:', error)
+    showUploadStatus('error', `上傳失敗: ${error.message}`)
+    backendUploadResult.value = null
+  } finally {
+    isUploading.value = false
   }
 }
 
@@ -316,101 +395,87 @@ const sendJSONPayload = async () => {
     showUploadStatus('error', '請先上傳或選擇 JSON 檔案')
     return
   }
+
   isProcessing.value = true
   try {
-    showUploadStatus('info', '正在讀取檔案並發送 JSON payload...')
-    const fileContent = await readFileAsText(uploadedFile.value) as string
-    const rawJsonData = JSON.parse(fileContent)
-
-    // 嘗試將各作業資料內的元素規範為 { comment: "..." } 的陣列
-    const formattedAssignmentData: Record<string, any[]> = {}
-    try {
-      Object.entries(rawJsonData).forEach(([hwName, items]) => {
-        if (!Array.isArray(items)) {
-          formattedAssignmentData[hwName] = []
-          return
-        }
-        formattedAssignmentData[hwName] = items.map(item => {
-          if (typeof item === 'string') {
-            return { comment: item }
-          }
-          const textField = item.comment ?? item.Comment ?? item.text ?? item.Text ?? item.content ?? item.Content
-          let commentText = ''
-          if (typeof textField === 'string' && textField.trim().length > 0) {
-            commentText = textField
-          } else {
-            for (const val of Object.values(item)) {
-              if (typeof val === 'string' && val.trim().length > 0) {
-                commentText = val
-                break
-              }
-            }
-          }
-          return { comment: String(commentText ?? ''), original: item }
-        })
-      })
-    } catch (formatErr) {
-      console.warn('sendJSONPayload: 格式化 assignment_data 發生錯誤，將嘗試直接送原始資料', formatErr)
+    console.log('🚀 開始新的推論流程...')
+    
+    // 檢查是否已經上傳到後端
+    if (!backendUploadResult.value) {
+      showUploadStatus('error', '請先點擊「上傳檔案到後端」按鈕')
+      return
     }
 
-    console.debug('sendJSONPayload -> payload sample keys:', Object.keys(formattedAssignmentData).slice(0,5))
-    // 使用預設後端位址 http://127.0.0.1:8000
+    // 從後端上傳結果中取得檔案路徑
+    const uploadedFileName = (backendUploadResult.value.data as any)?.data?.name
+    if (!uploadedFileName) {
+      throw new Error('無法取得上傳檔案的路徑')
+    }
 
-    const apiResp = await textAnalysisAPI.analyzeJSON(formattedAssignmentData)
-    if (!apiResp.success) {
-      // 若後端回 400 並指出缺少文本，嘗試 fallback 為批次 texts 呼叫
-      const errMsg = apiResp.error || '後端推論失敗'
-      console.error('sendJSONPayload: analyzeJSON failed:', errMsg)
+    console.log('📁 使用已上傳的檔案進行推論:', uploadedFileName)
 
-      // 收集所有非空 comment 字串
-      const allTexts: string[] = []
-      Object.values(formattedAssignmentData).forEach(arr => {
-        if (Array.isArray(arr)) {
-          arr.forEach(obj => {
-            if (obj && typeof obj.comment === 'string' && obj.comment.trim().length > 0) {
-              allTexts.push(obj.comment)
-            }
-          })
-        }
-      })
+    // 使用新的推論 API
+    const inferenceResult = await textAnalysisAPI.inferenceFromStorage(uploadedFileName, {
+      verbose: true  // 獲取完整結果用於圖表顯示
+    })
 
-      if (allTexts.length > 0) {
-        console.debug('sendJSONPayload: fallback inferTexts, texts count=', allTexts.length)
-        const batchResp = await textAnalysisAPI.inferTexts(allTexts, undefined, [0.5,0.5,0.5])
-        if (!batchResp.success) {
-          throw new Error(batchResp.error || errMsg)
-        }
-        const processedData = batchResp.data
-        rawData.value = processedData
-        availableHW.value = Object.keys(processedData).sort()
-        selectedHW.value = [...availableHW.value]
-        showUploadStatus('success', '後端批次推論完成並已更新圖表資料（請點擊 GO 更新視圖）')
-        return
-      } else {
-        throw new Error(errMsg)
+    if (!inferenceResult.success) {
+      throw new Error(inferenceResult.error || '推論失敗')
+    }
+
+    console.log('🔮 推論完成，結果資訊:', inferenceResult.data)
+
+    // 如果有完整結果，直接使用
+    if (inferenceResult.data && (inferenceResult.data as any).full_result) {
+      const processedData = (inferenceResult.data as any).full_result
+      console.log('📊 使用 verbose 模式的完整結果')
+      
+      // 正規化後端回傳資料為舊格式
+      let finalData = processedData
+      const normalized = normalizeBackendData(processedData)
+      if (normalized) {
+        finalData = normalized
       }
+
+      rawData.value = finalData
+      availableHW.value = Object.keys(finalData).sort()
+      selectedHW.value = [...availableHW.value]
+      showUploadStatus('success', '推論完成並已更新圖表資料（請點擊「生成圖表」更新視圖）')
+      return
     }
 
-    const processedData = (apiResp.data as any)?.processed_data ?? apiResp.data
-    if (!processedData) {
-      throw new Error('後端返回處理後數據為空')
+    // 如果沒有完整結果，嘗試下載推論結果檔案
+    if (inferenceResult.data?.output) {
+      console.log('📥 嘗試下載推論結果檔案...')
+      
+      const downloadResult = await textAnalysisAPI.downloadInferenceResult(inferenceResult.data.output)
+      
+      if (downloadResult.success) {
+        console.log('✅ 成功下載推論結果')
+        
+        let finalData = downloadResult.data
+        const normalized = normalizeBackendData(downloadResult.data)
+        if (normalized) {
+          finalData = normalized
+        }
+
+        rawData.value = finalData
+        availableHW.value = Object.keys(finalData).sort()
+        selectedHW.value = [...availableHW.value]
+        showUploadStatus('success', '推論完成並已更新圖表資料（請點擊「生成圖表」更新視圖）')
+      } else {
+        // 下載失敗，但推論成功
+        showUploadStatus('warning', `推論已完成並儲存至 ${inferenceResult.data.output.name}，但無法自動下載結果檔案`)
+        console.warn('推論結果已儲存到:', inferenceResult.data.output)
+      }
+    } else {
+      throw new Error('推論完成但未返回結果資訊')
     }
 
-    // 正規化後端回傳資料為舊格式
-    let finalData = processedData
-    const normalized = normalizeBackendData(processedData)
-    if (normalized) {
-      finalData = normalized
-    }
-
-    rawData.value = finalData
-    availableHW.value = Object.keys(finalData).sort()
-    selectedHW.value = [...availableHW.value]
-    showUploadStatus('success', '後端推論完成並已更新圖表資料（請點擊 GO 更新視圖）')
   } catch (err: unknown) {
-    console.error('sendJSONPayload failed', err)
+    console.error('❌ 推論流程失敗:', err)
     const errorMessage = err instanceof Error ? err.message : String(err)
-    showUploadStatus('error', errorMessage)
+    showUploadStatus('error', `推論失敗: ${errorMessage}`)
   } finally {
     isProcessing.value = false
   }
@@ -802,7 +867,138 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* 複製您原有的 CSS 樣式 */
+/* 保持原有樣式，並新增以下樣式 */
+
+/* 上傳檔案到後端按鈕區域 */
+.upload-to-backend-section {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.upload-to-backend-btn {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: white;
+  border: none;
+  padding: 16px 32px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 auto;
+}
+
+.upload-to-backend-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+.upload-to-backend-btn:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.upload-to-backend-btn svg {
+  flex-shrink: 0;
+}
+
+/* 上傳中狀態 */
+.uploading-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 20px;
+}
+
+.upload-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #f3f4f6;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.uploading-indicator p {
+  color: #6b7280;
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* 後端上傳成功訊息 */
+.backend-upload-success {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+  border: 1px solid #10b981;
+  border-radius: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.backend-upload-success .success-icon {
+  background: #10b981;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.upload-result-content {
+  flex: 1;
+}
+
+.upload-result-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #065f46;
+  margin: 0 0 12px 0;
+}
+
+.upload-result-details {
+  font-size: 0.95rem;
+  color: #047857;
+}
+
+.upload-result-details p {
+  margin: 6px 0;
+  word-break: break-all;
+}
+
+.upload-result-details strong {
+  font-weight: 600;
+}
+
+.upload-link {
+  color: #0d9488;
+  text-decoration: none;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.upload-link:hover {
+  text-decoration: underline;
+}
+
+/* 其餘樣式保持不變... */
 .review-engagement-graph {
   width: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
