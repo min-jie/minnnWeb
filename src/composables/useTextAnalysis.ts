@@ -1,6 +1,6 @@
 // src/composables/useTextAnalysis.ts
 import { ref, computed, type Ref } from 'vue'
-import { textAnalysisAPI, type AnalysisResults, type AnalysisThresholds, type AnalysisItem } from '@/services/textAnalysisAPI'
+import { textAnalysisAPI, type AnalysisResults, type AnalysisThresholds, type AnalysisItem } from '../services/textAnalysisAPI'
 
 export function useTextAnalysis() {
   // 反應式狀態
@@ -27,8 +27,9 @@ export function useTextAnalysis() {
     if (!analysisResults.value) return []
     const results: AnalysisItem[] = []
     
-    Object.entries(analysisResults.value.results).forEach(([hwName, items]) => {
-      items.forEach(item => {
+    const entries = Object.entries(analysisResults.value.results as Record<string, AnalysisItem[]>)
+    entries.forEach(([hwName, items]) => {
+      items.forEach((item: AnalysisItem) => {
         results.push({
           ...item,
           homework: hwName

@@ -1,6 +1,9 @@
 <!-- src/components/TextAnalysis.vue -->
-<template>
-  <div class="max-w-6xl mx-auto p-6 space-y-6">
+<template>      <!-- 檔案拖放區域 -->
+      <div
+        @click="fileInput?.click()"
+        @drop.prevent="handleFileDrop"
+        @dragleave.prevent="isDragOver = false"iv class="max-w-6xl mx-auto p-6 space-y-6">
     <!-- 標題區域 -->
     <div class="text-center">
       <h1 class="text-4xl font-bold text-gray-900 mb-2">
@@ -51,7 +54,7 @@
       
       <!-- 檔案拖放區域 -->
       <div
-        @click="$refs.fileInput?.click()"
+        @click="fileInput?.click()"
         @drop.prevent="handleFileDrop"
         @dragover.prevent="isDragOver = true"
         @dragleave.prevent="isDragOver = false"
@@ -105,7 +108,7 @@
           </label>
           <input
             :value="thresholds.relevance"
-            @input="updateThreshold('relevance', Number($event.target.value))"
+            @input="(e) => updateThreshold('relevance', Number((e.target as HTMLInputElement).value))"
             type="number"
             min="0"
             max="1"
@@ -119,7 +122,7 @@
           </label>
           <input
             :value="thresholds.concreteness"
-            @input="updateThreshold('concreteness', Number($event.target.value))"
+            @input="(e) => updateThreshold('concreteness', Number((e.target as HTMLInputElement).value))"
             type="number"
             min="0"
             max="1"
@@ -133,7 +136,7 @@
           </label>
           <input
             :value="thresholds.constructive"
-            @input="updateThreshold('constructive', Number($event.target.value))"
+            @input="(e) => updateThreshold('constructive', Number((e.target as HTMLInputElement).value))"
             type="number"
             min="0"
             max="1"
