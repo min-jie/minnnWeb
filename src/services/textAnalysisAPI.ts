@@ -1,7 +1,7 @@
 // src/services/textAnalysisAPI.ts
 import { apiConfig } from './apiConfig'
 import { storage } from '../firebase'
-import { ref, getDownloadURL } from 'firebase/storage'
+import { ref, getDownloadURL, getBlob } from 'firebase/storage' // 添加 getBlob
 
 // 增加超時設定
 const TIMEOUT_MS = 300000 // 5分鐘，因為文本分析可能需要較長時間
@@ -173,49 +173,6 @@ export class TextAnalysisAPI {
     }
   }
 
-  // 🆕 使用 Firebase Web SDK 下載推論結果檔案
-  async downloadInferenceResultWithFirebase(
-    outputInfo: {
-      bucket: string
-      name: string
-      gs_uri: string
-      public_url?: string
-    }
-  ): Promise<APIResponse<any>> {
-    try {
-      console.log('📥 使用 Firebase Web SDK 下載推論結果:', outputInfo.name)
-
-      // 建立 Firebase Storage 參考
-      const storageRef = ref(storage, outputInfo.name)
-      
-      // 取得下載 URL
-      const downloadURL = await getDownloadURL(storageRef)
-      console.log('✅ 成功取得 Firebase 下載連結')
-
-      // 下載檔案內容
-      const response = await fetch(downloadURL)
-      
-      if (!response.ok) {
-        throw new Error(`Firebase 下載失敗: HTTP ${response.status}`)
-      }
-
-      // 確認是 JSON 格式
-      const contentType = response.headers.get('content-type')
-      if (!contentType?.includes('application/json') && !outputInfo.name.endsWith('.json')) {
-        console.warn('⚠️ 檔案可能不是 JSON 格式:', contentType)
-      }
-
-      const jsonData = await response.json()
-      console.log('✅ JSON 推論結果下載成功，資料大小:', JSON.stringify(jsonData).length, '字元')
-      
-      return { success: true, data: jsonData }
-
-    } catch (error: any) {
-      console.error('❌ Firebase 下載推論結果失敗:', error)
-      return { success: false, error: error?.message || 'Firebase 下載失敗' }
-    }
-  }
-
   // 🆕 下載推論結果檔案
   // 🆕 下載推論結果 (支援 gs:// URI 和 outputInfo 格式)
   async downloadInferenceResult(
@@ -238,24 +195,38 @@ export class TextAnalysisAPI {
         }
         
         const [, , path] = gsMatch
+        console.log(`📂 從 Firebase Storage 下載: ${path}`)
         
-        // 使用 Firebase SDK 下載文件
-        const { ref: storageRef, getDownloadURL } = await import('firebase/storage')
-        const { storage } = await import('@/firebase')
+        // 使用已導入的 Firebase Storage SDK
+        const fileRef = ref(storage, path)
         
-        const fileRef = storageRef(storage, path)
-        const downloadURL = await getDownloadURL(fileRef)
-        
-        // 下載 JSON 內容
-        const response = await fetch(downloadURL)
-        if (!response.ok) {
-          throw new Error(`下載失敗: ${response.status}`)
+        try {
+          // 方法1：使用 getBlob 直接下載（避免 CORS）
+          console.log('🔄 使用 getBlob 直接下載...')
+          const blob = await getBlob(fileRef)
+          const text = await blob.text()
+          const jsonData = JSON.parse(text)
+          
+          console.log('✅ 成功下載推論結果 (getBlob)')
+          return { success: true, data: jsonData }
+          
+        } catch (blobError) {
+          console.warn('⚠️ getBlob 下載失敗，嘗試 downloadURL 方式:', blobError)
+          
+          // 方法2：備用方案 - 使用下載 URL
+          const downloadURL = await getDownloadURL(fileRef)
+          console.log('🔗 取得下載 URL，嘗試 fetch...')
+          
+          const response = await fetch(downloadURL)
+          if (!response.ok) {
+            throw new Error(`下載失敗: ${response.status} ${response.statusText}`)
+          }
+          
+          const jsonData = await response.json()
+          console.log('✅ 成功下載推論結果 (downloadURL)')
+          return { success: true, data: jsonData }
         }
         
-        const jsonData = await response.json()
-        console.log('✅ 成功下載推論結果')
-        
-        return { success: true, data: jsonData }
       } else {
         // 處理 outputInfo 格式
         console.log('📥 下載推論結果 (outputInfo):', input.name)
@@ -264,7 +235,61 @@ export class TextAnalysisAPI {
 
     } catch (error: any) {
       console.error('❌ 下載推論結果失敗:', error)
-      return { success: false, error: error?.message || '下載失敗' }
+      return { 
+        success: false, 
+        error: error?.message || '下載失敗' 
+      }
+    }
+  }
+
+  // 🆕 使用 Firebase Web SDK 下載推論結果檔案
+  async downloadInferenceResultWithFirebase(
+    outputInfo: {
+      bucket: string
+      name: string
+      gs_uri: string
+      public_url?: string
+    }
+  ): Promise<APIResponse<any>> {
+    try {
+      console.log('📥 使用 Firebase SDK 下載推論結果:', outputInfo.name)
+
+      // 建立 Firebase Storage 參考
+      const storageRef = ref(storage, outputInfo.name)
+      
+      try {
+        // 方法1：直接使用 getBlob（推薦）
+        console.log('🔄 使用 getBlob 下載...')
+        const blob = await getBlob(storageRef)
+        const text = await blob.text()
+        const jsonData = JSON.parse(text)
+        
+        console.log('✅ Firebase getBlob 下載成功，資料大小:', JSON.stringify(jsonData).length, '字元')
+        return { success: true, data: jsonData }
+        
+      } catch (blobError) {
+        console.warn('⚠️ getBlob 失敗，使用 downloadURL 備用方案:', blobError)
+        
+        // 方法2：備用方案
+        const downloadURL = await getDownloadURL(storageRef)
+        console.log('🔗 取得 Firebase 下載連結')
+
+        const response = await fetch(downloadURL)
+        if (!response.ok) {
+          throw new Error(`Firebase 下載失敗: HTTP ${response.status}`)
+        }
+
+        const jsonData = await response.json()
+        console.log('✅ Firebase downloadURL 下載成功，資料大小:', JSON.stringify(jsonData).length, '字元')
+        return { success: true, data: jsonData }
+      }
+
+    } catch (error: any) {
+      console.error('❌ Firebase 下載推論結果失敗:', error)
+      return { 
+        success: false, 
+        error: error?.message || 'Firebase 下載失敗' 
+      }
     }
   }
 
