@@ -121,13 +121,13 @@
         class="process-btn"
         :disabled="!uploadedFile"
       >
-        進行資料處理
+        🔮 推論分析並生成圖表
       </button>
       
       <!-- 處理中狀態 -->
       <div v-if="isProcessing" class="processing-indicator">
         <div class="spinner"></div>
-        <p>處理中...</p>
+        <p>使用 Firebase SDK 推論分析中...</p>
       </div>
     </div>
     
@@ -197,6 +197,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { textAnalysisAPI } from '@/services/textAnalysisAPI'
+import { UploadFileAPI } from '@/services/uploadFileAPI'
+
+// 創建上傳 API 實例
+const uploadAPI = new UploadFileAPI()
 
 // 定義 props
 interface Props {
@@ -302,9 +306,10 @@ const uploadFileToBackend = async () => {
   try {
     console.log('🚀 開始上傳檔案到後端:', uploadedFile.value.name)
     
-    const result = await textAnalysisAPI.uploadFileToStorage(
+    // 使用 uploadFileAPI 進行上傳
+    const result = await uploadAPI.uploadToFirebase(
       uploadedFile.value, 
-      `data/${uploadedFile.value.name}`
+      { destination: `data/${uploadedFile.value.name}` }
     )
     
     if (result.success) {
@@ -398,7 +403,7 @@ const sendJSONPayload = async () => {
 
   isProcessing.value = true
   try {
-    console.log('🚀 開始新的推論流程...')
+    console.log('🚀 開始使用 Firebase SDK 進行完整推論流程...')
     
     // 檢查是否已經上傳到後端
     if (!backendUploadResult.value) {
@@ -407,87 +412,104 @@ const sendJSONPayload = async () => {
     }
 
     // 從後端上傳結果中取得檔案路徑
-    const uploadedFileName = (backendUploadResult.value.data as any)?.data?.name
+    const uploadedFileName = (backendUploadResult.value.data as any)?.data?.name || (backendUploadResult.value.data as any)?.name
     if (!uploadedFileName) {
       throw new Error('無法取得上傳檔案的路徑')
     }
 
     console.log('📁 使用已上傳的檔案進行推論:', uploadedFileName)
+    showUploadStatus('info', '正在進行推論...')
 
-    // 使用新的推論 API
-    const inferenceResult = await textAnalysisAPI.inferenceFromStorage(uploadedFileName, {
-      verbose: true  // 獲取完整結果用於圖表顯示
-    })
+    // 使用新的推論 API (不傳送 verbose 參數，使用後端預設行為)
+    const inferenceResult = await textAnalysisAPI.inferenceFromStorage(uploadedFileName)
 
     if (!inferenceResult.success) {
       throw new Error(inferenceResult.error || '推論失敗')
     }
 
-    console.log('🔮 推論完成，結果資訊:', inferenceResult.data)
+    console.log('🔮 推論完成，後端回應結構:', inferenceResult.data)
+    console.log('📍 預期回應格式: { status: "success", data: { output: { bucket, name, gs_uri } } }')
 
-    // 如果有完整結果，直接使用
-    if (inferenceResult.data && (inferenceResult.data as any).full_result) {
-      const processedData = (inferenceResult.data as any).full_result
-      console.log('📊 使用 verbose 模式的完整結果')
-      
-      // 正規化後端回傳資料為舊格式
-      let finalData = processedData
-      const normalized = normalizeBackendData(processedData)
-      if (normalized) {
-        finalData = normalized
-      }
-
-      rawData.value = finalData
-      availableHW.value = Object.keys(finalData).sort()
-      selectedHW.value = [...availableHW.value]
-      showUploadStatus('success', '推論完成並已更新圖表資料（請點擊「生成圖表」更新視圖）')
-      return
-    }
-
-    // 如果沒有完整結果，嘗試下載推論結果檔案
+    // 檢查是否有推論結果輸出檔案位置資訊
     if (inferenceResult.data?.output) {
-      console.log('📥 嘗試下載推論結果檔案...')
+      console.log('� 使用 Firebase SDK 下載推論結果檔案...')
+      showUploadStatus('info', '正在使用 Firebase SDK 下載推論結果 (避免 CORS 限制)...')
       
+      // 使用 Firebase SDK 下載推論結果
       const downloadResult = await textAnalysisAPI.downloadInferenceResult(inferenceResult.data.output)
       
       if (downloadResult.success) {
-        console.log('✅ 成功下載推論結果')
+        console.log('✅ 成功使用 Firebase SDK 下載推論結果檔案')
+        console.log('📊 下載的檔案內容 (原始):', downloadResult.data)
+        console.log('📊 檔案內容資料類型:', typeof downloadResult.data)
+        console.log('📊 檔案內容鍵值:', Object.keys(downloadResult.data || {}))
         
-        let finalData = downloadResult.data
-        const normalized = normalizeBackendData(downloadResult.data)
+        // 這應該是純粹的推論結果 JSON，不是包裝在 response 中
+        let actualData = downloadResult.data
+        
+        // 如果下載的是 API response 格式（有 status 和 data），提取實際資料
+        if (actualData && typeof actualData === 'object' && actualData.status && actualData.data) {
+          console.log('🔍 偵測到 API response 格式，提取實際資料...')
+          console.log('📊 Response status:', actualData.status)
+          console.log('📊 Response data:', actualData.data)
+          actualData = actualData.data
+        }
+        
+        // 如果還是有嵌套的 data，繼續提取
+        if (actualData && typeof actualData === 'object' && actualData.data && !Array.isArray(actualData)) {
+          console.log('🔍 發現嵌套的 data 欄位，繼續提取...')
+          actualData = actualData.data
+        }
+        
+        console.log('📊 最終提取的實際資料:', actualData)
+        console.log('📊 實際資料類型:', typeof actualData)
+        console.log('📊 實際資料鍵值:', Object.keys(actualData || {}))
+        
+        // 正規化後端回傳資料為舊格式
+        let finalData = actualData
+        const normalized = normalizeBackendData(actualData)
         if (normalized) {
           finalData = normalized
+          console.log('🔧 資料已正規化為舊格式')
+          console.log('🔧 正規化後的資料鍵值:', Object.keys(finalData))
+        } else {
+          console.log('⚠️ 資料無法正規化，使用原始資料')
         }
 
+        // 設置資料到全域變數，供原本的 script 使用
         rawData.value = finalData
         availableHW.value = Object.keys(finalData).sort()
-        selectedHW.value = [...availableHW.value]
-        showUploadStatus('success', '推論完成並已更新圖表資料（請點擊「生成圖表」更新視圖）')
+        selectedHW.value = [...availableHW.value] // 預設全選
+        
+        console.log('📋 可用作業列表:', availableHW.value)
+        console.log('✅ 資料已準備完成，準備生成圖表')
+        
+        // 自動觸發圖表更新
+        await nextTick() // 確保 DOM 更新完成
+        
+        // 呼叫原本的圖表生成函數
+        if (originalFunctions.generateAllGraph && typeof originalFunctions.generateAllGraph === 'function') {
+          console.log('🎨 自動生成圖表...')
+          updateGraphMode('all') // 預設顯示 All 模式
+          showUploadStatus('success', '✅ Firebase SDK 解析完成並已自動生成圖表！')
+        } else {
+          showUploadStatus('success', '✅ Firebase SDK 解析完成！請點擊「生成圖表」按鈕查看結果')
+        }
+        
       } else {
-        // 下載失敗，但推論成功
-        showUploadStatus('warning', `推論已完成並儲存至 ${inferenceResult.data.output.name}，但無法自動下載結果檔案`)
-        console.warn('推論結果已儲存到:', inferenceResult.data.output)
+        throw new Error(`Firebase SDK 下載失敗: ${downloadResult.error}`)
       }
     } else {
-      throw new Error('推論完成但未返回結果資訊')
+      throw new Error('推論完成但未返回輸出檔案資訊')
     }
 
   } catch (err: unknown) {
-    console.error('❌ 推論流程失敗:', err)
+    console.error('❌ Firebase SDK 推論流程失敗:', err)
     const errorMessage = err instanceof Error ? err.message : String(err)
-    showUploadStatus('error', `推論失敗: ${errorMessage}`)
+    showUploadStatus('error', `Firebase SDK 處理失敗: ${errorMessage}`)
   } finally {
     isProcessing.value = false
   }
-}
-
-const readFileAsText = (file: File) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = (e) => resolve(e.target?.result)
-    reader.onerror = (_e) => reject(new Error('檔案讀取失敗'))
-    reader.readAsText(file, 'UTF-8')
-  })
 }
 
 // 載入並初始化原有的 JavaScript 邏輯

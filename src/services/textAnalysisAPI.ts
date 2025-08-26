@@ -1,5 +1,7 @@
 // src/services/textAnalysisAPI.ts
 import { apiConfig } from './apiConfig'
+import { storage } from '../firebase'
+import { ref, getDownloadURL } from 'firebase/storage'
 
 export interface APIResponse<T> {
   success: boolean
@@ -10,7 +12,6 @@ export interface APIResponse<T> {
 export interface InferenceRequest {
   source: string
   output?: string
-  verbose?: boolean
 }
 
 export interface InferenceResponse {
@@ -104,29 +105,20 @@ export class TextAnalysisAPI {
     source: string,
     options: {
       output?: string
-      verbose?: boolean
     } = {}
   ): Promise<APIResponse<InferenceResponse['data']>> {
     try {
       console.log('🔮 開始從 Storage 檔案進行推論:')
       console.log('- 來源檔案:', source)
       console.log('- 輸出檔案:', options.output || '自動生成')
-      console.log('- 詳細模式:', options.verbose || false)
 
-      // 強制啟用 verbose 模式，避免下載問題
+      // 不傳送 verbose 參數，讓後端使用預設行為
       const requestBody: InferenceRequest = {
         source,
-        verbose: true,  // 🔧 強制啟用
         ...options
       }
 
-      // 🔧 也可以使用查詢參數方式
-      const queryParams = new URLSearchParams()
-      if (requestBody.verbose) {
-        queryParams.append('verbose', '1')
-      }
-      
-      const url = `${apiConfig.getBaseURL()}/inference${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      const url = `${apiConfig.getBaseURL()}/inference`
 
       const response = await fetch(url, {
         method: 'POST',
@@ -166,15 +158,6 @@ export class TextAnalysisAPI {
         }
       }
 
-      // 檢查是否有完整結果
-      if (responseData.full_result) {
-        console.log('✅ 收到完整推論結果（verbose 模式）')
-        // 將 full_result 附加到 data 中，便於後續處理
-        if (responseData.data) {
-          (responseData.data as any).full_result = responseData.full_result
-        }
-      }
-
       if (responseData.warning) {
         console.warn('⚠️ 推論警告:', responseData.warning)
       }
@@ -183,6 +166,49 @@ export class TextAnalysisAPI {
     } catch (error: any) {
       console.error('❌ Storage 推論失敗:', error)
       return { success: false, error: error?.message || 'Storage 推論失敗' }
+    }
+  }
+
+  // 🆕 使用 Firebase Web SDK 下載推論結果檔案
+  async downloadInferenceResultWithFirebase(
+    outputInfo: {
+      bucket: string
+      name: string
+      gs_uri: string
+      public_url?: string
+    }
+  ): Promise<APIResponse<any>> {
+    try {
+      console.log('📥 使用 Firebase Web SDK 下載推論結果:', outputInfo.name)
+
+      // 建立 Firebase Storage 參考
+      const storageRef = ref(storage, outputInfo.name)
+      
+      // 取得下載 URL
+      const downloadURL = await getDownloadURL(storageRef)
+      console.log('✅ 成功取得 Firebase 下載連結')
+
+      // 下載檔案內容
+      const response = await fetch(downloadURL)
+      
+      if (!response.ok) {
+        throw new Error(`Firebase 下載失敗: HTTP ${response.status}`)
+      }
+
+      // 確認是 JSON 格式
+      const contentType = response.headers.get('content-type')
+      if (!contentType?.includes('application/json') && !outputInfo.name.endsWith('.json')) {
+        console.warn('⚠️ 檔案可能不是 JSON 格式:', contentType)
+      }
+
+      const jsonData = await response.json()
+      console.log('✅ JSON 推論結果下載成功，資料大小:', JSON.stringify(jsonData).length, '字元')
+      
+      return { success: true, data: jsonData }
+
+    } catch (error: any) {
+      console.error('❌ Firebase 下載推論結果失敗:', error)
+      return { success: false, error: error?.message || 'Firebase 下載失敗' }
     }
   }
 
@@ -198,26 +224,9 @@ export class TextAnalysisAPI {
     try {
       console.log('📥 開始下載推論結果:', outputInfo.name)
 
-      // 如果有公開連結，直接下載
-      if (outputInfo.public_url) {
-        console.log('🌐 使用公開連結下載')
-        const response = await fetch(outputInfo.public_url)
-        
-        if (!response.ok) {
-          throw new Error(`下載失敗: HTTP ${response.status}`)
-        }
-
-        const jsonData = await response.json()
-        console.log('✅ 推論結果下載成功')
-        return { success: true, data: jsonData }
-      }
-
-      // 如果沒有公開連結，嘗試通過後端代理下載
-      console.log('🔒 檔案不公開，嘗試通過後端下載')
-      
-      // 這裡可能需要新的後端端點來代理下載
-      // 或者提示用戶使用 Firebase Web SDK
-      throw new Error('檔案不公開，需要使用 Firebase Web SDK 或後端代理下載')
+      // 直接使用 Firebase Web SDK 下載，避免 CORS 問題
+      console.log('🔒 使用 Firebase Web SDK 下載 (避免 CORS 限制)')
+      return await this.downloadInferenceResultWithFirebase(outputInfo)
 
     } catch (error: any) {
       console.error('❌ 下載推論結果失敗:', error)
@@ -231,7 +240,6 @@ export class TextAnalysisAPI {
     options: {
       destination?: string
       outputPath?: string
-      verbose?: boolean
     } = {}
   ): Promise<APIResponse<{
     uploadInfo: any
@@ -254,8 +262,7 @@ export class TextAnalysisAPI {
       // 步驟 2: 從上傳的檔案進行推論
       const source = (uploadResult.data as any)?.data?.name || destination
       const inferenceResult = await this.inferenceFromStorage(source, {
-        output: options.outputPath,
-        verbose: options.verbose
+        output: options.outputPath
       })
 
       if (!inferenceResult.success) {
@@ -264,9 +271,10 @@ export class TextAnalysisAPI {
 
       console.log('✅ 推論完成！')
 
-      // 步驟 3: 如果是 verbose 模式或者有公開連結，嘗試下載結果
+      // 步驟 3: 嘗試下載結果（無論是否為 verbose 模式）
       let fullResult = undefined
-      if (options.verbose && inferenceResult.data?.output) {
+      if (inferenceResult.data?.output) {
+        console.log('📥 嘗試下載完整的 JSON 推論結果...')
         const downloadResult = await this.downloadInferenceResult(inferenceResult.data.output)
         if (downloadResult.success) {
           fullResult = downloadResult.data
