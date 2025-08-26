@@ -1,6 +1,7 @@
 // src/composables/useTextAnalysis.ts
-import { ref, computed, type Ref } from 'vue'
-import { textAnalysisAPI, type APIResponse } from '../services/textAnalysisAPI'
+import { ref, computed } from 'vue'
+//import { supabase } from '@/supabase'
+import { textAnalysisAPI } from '../services/textAnalysisAPI'
 import { apiConfig } from '../services/apiConfig'
 
 // 簡化的型別定義
@@ -46,9 +47,9 @@ export interface AnalysisItem {
 
 export function useTextAnalysis() {
   // 反應式狀態
-  const selectedFile: Ref<File | null> = ref(null)
+  const selectedFile = ref<File | null>(null)
   const analyzing = ref(false)
-  const analysisResults: Ref<AnalysisResults | null> = ref(null)
+  const analysisResults = ref<AnalysisResults | null>(null)
   const analysisError = ref('')
   const apiConnected = ref(false)
   const apiUrl = apiConfig.baseURL
