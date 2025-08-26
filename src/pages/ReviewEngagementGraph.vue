@@ -55,12 +55,6 @@
             </div>
           </div>
           
-          <!-- 上傳成功狀態 -->
-          <div v-if="uploadedFile && uploadStatus?.type === 'success'" class="upload-success-message">
-            <div class="success-icon">✓</div>
-            <span>檔案上傳成功！</span>
-          </div>
-          
           <!-- 錯誤狀態 -->
           <div v-if="uploadStatus?.type === 'error'" class="upload-error-message">
             <div class="error-icon">✗</div>
