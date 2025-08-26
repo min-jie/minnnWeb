@@ -2,7 +2,7 @@
 import { ref, type Ref } from 'vue'
 
 // 集中管理 API Base URL（不使用環境變數）
-const baseURL: Ref<string> = ref('https://api.moriiikumo.com')
+const baseURL: Ref<string> = ref('http://140.134.26.176:8000')
 
 export const apiConfig = {
   // 可供元件雙向綁定的反應式值
