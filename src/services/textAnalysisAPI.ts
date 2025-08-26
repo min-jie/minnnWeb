@@ -119,14 +119,12 @@ export class TextAnalysisAPI {
     options: {
       output?: string
     } = {}
-  ): Promise<APIResponse<InferenceResponse['data']>> {
+  ): Promise<{task_id: string, status: string, message: string}> {
     try {
       console.log('🔮 開始從 Storage 檔案進行推論:')
       console.log('- 來源檔案:', source)
-      console.log('- 輸出檔案:', options.output || '自動生成')
 
-      // 不傳送 verbose 參數，讓後端使用預設行為
-      const requestBody: InferenceRequest = {
+      const requestBody = {
         source,
         ...options
       }
@@ -143,9 +141,9 @@ export class TextAnalysisAPI {
 
       const responseText = await response.text()
       console.log('📥 推論回應狀態:', response.status)
-      console.log('📥 推論回應內容:', responseText.substring(0, 500))
+      console.log('📥 推論回應內容:', responseText)
 
-      let responseData: InferenceResponse
+      let responseData: any
       try {
         responseData = JSON.parse(responseText)
       } catch (e) {
@@ -157,28 +155,21 @@ export class TextAnalysisAPI {
         throw new Error(message)
       }
 
-      if (responseData.status === 'error') {
-        throw new Error(responseData.message || 'API 回傳錯誤')
+      // 檢查回應是否包含 task_id
+      if (!responseData.task_id) {
+        throw new Error('API 回應格式錯誤: 缺少 task_id')
       }
 
-      // 顯示推論結果資訊
-      if (responseData.data?.output) {
-        console.log('✅ 推論完成！')
-        console.log('- 輸出檔案:', responseData.data.output.name)
-        console.log('- Storage URI:', responseData.data.output.gs_uri)
-        if (responseData.data.output.public_url) {
-          console.log('- 公開連結:', responseData.data.output.public_url)
-        }
-      }
+      console.log('✅ 推論任務已建立:', responseData.task_id)
 
-      if (responseData.warning) {
-        console.warn('⚠️ 推論警告:', responseData.warning)
+      return {
+        task_id: responseData.task_id,
+        status: responseData.status || 'PENDING',
+        message: responseData.message || '推論任務已建立'
       }
-
-      return { success: true, data: responseData.data }
     } catch (error: any) {
       console.error('❌ Storage 推論失敗:', error)
-      return { success: false, error: error?.message || 'Storage 推論失敗' }
+      throw error
     }
   }
 
@@ -226,8 +217,9 @@ export class TextAnalysisAPI {
   }
 
   // 🆕 下載推論結果檔案
+  // 🆕 下載推論結果 (支援 gs:// URI 和 outputInfo 格式)
   async downloadInferenceResult(
-    outputInfo: {
+    input: string | {
       bucket: string
       name: string
       gs_uri: string
@@ -235,11 +227,40 @@ export class TextAnalysisAPI {
     }
   ): Promise<APIResponse<any>> {
     try {
-      console.log('📥 開始下載推論結果:', outputInfo.name)
-
-      // 直接使用 Firebase Web SDK 下載，避免 CORS 問題
-      console.log('🔒 使用 Firebase Web SDK 下載 (避免 CORS 限制)')
-      return await this.downloadInferenceResultWithFirebase(outputInfo)
+      if (typeof input === 'string') {
+        // 處理 gs:// URI 格式
+        console.log('📥 下載推論結果 (gs:// URI):', input)
+        
+        // 解析 gs:// URI
+        const gsMatch = input.match(/^gs:\/\/([^\/]+)\/(.+)$/)
+        if (!gsMatch) {
+          throw new Error('無效的 gs:// URI 格式')
+        }
+        
+        const [, , path] = gsMatch
+        
+        // 使用 Firebase SDK 下載文件
+        const { ref: storageRef, getDownloadURL } = await import('firebase/storage')
+        const { storage } = await import('@/firebase')
+        
+        const fileRef = storageRef(storage, path)
+        const downloadURL = await getDownloadURL(fileRef)
+        
+        // 下載 JSON 內容
+        const response = await fetch(downloadURL)
+        if (!response.ok) {
+          throw new Error(`下載失敗: ${response.status}`)
+        }
+        
+        const jsonData = await response.json()
+        console.log('✅ 成功下載推論結果')
+        
+        return { success: true, data: jsonData }
+      } else {
+        // 處理 outputInfo 格式
+        console.log('📥 下載推論結果 (outputInfo):', input.name)
+        return await this.downloadInferenceResultWithFirebase(input)
+      }
 
     } catch (error: any) {
       console.error('❌ 下載推論結果失敗:', error)
@@ -247,7 +268,62 @@ export class TextAnalysisAPI {
     }
   }
 
-  // 🆕 完整的上傳 + 推論流程
+  // 🆕 根據 task_id 從 Firestore 獲取結果並下載
+  async downloadResultFromTask(taskId: string): Promise<APIResponse<any>> {
+    try {
+      console.log('📥 嘗試從任務獲取結果:', taskId)
+      
+      // 這裡可以實現從 Firestore 獲取任務狀態，然後下載結果
+      // 現在先返回一個暫時的實現
+      console.log('⚠️ downloadResultFromTask 尚未完全實現')
+      
+      return { success: false, error: '功能尚未實現' }
+    } catch (error: any) {
+      console.error('❌ 從任務下載結果失敗:', error)
+      return { success: false, error: error?.message || '下載失敗' }
+    }
+  }
+
+  // 🆕 完整的上傳 + 推論流程 (使用新的任務型 API)
+  async uploadFileAndInferenceWithTask(
+    file: File,
+    options: {
+      destination?: string
+      outputPath?: string
+    } = {}
+  ): Promise<{task_id: string, status: string, message: string, uploadInfo: any}> {
+    try {
+      console.log('🚀 開始完整的上傳 + 推論流程 (任務型)')
+      
+      // 步驟 1: 上傳檔案
+      const destination = options.destination || `data/${file.name}`
+      const uploadResult = await this.uploadFileToStorage(file, destination)
+      
+      if (!uploadResult.success) {
+        throw new Error(`檔案上傳失敗: ${uploadResult.error}`)
+      }
+
+      console.log('✅ 檔案上傳完成，開始建立推論任務...')
+
+      // 步驟 2: 建立推論任務
+      const source = (uploadResult.data as any)?.data?.name || destination
+      const inferenceResult = await this.inferenceFromStorage(source, {
+        output: options.outputPath
+      })
+
+      return {
+        ...inferenceResult,
+        uploadInfo: uploadResult.data
+      }
+
+    } catch (error: any) {
+      console.error('❌ 上傳 + 推論流程失敗:', error)
+      throw error
+    }
+  }
+
+  // 保留舊的函數以維持向後相容性（標記為廢棄）
+  /** @deprecated 使用 uploadFileAndInferenceWithTask 替代 */
   async uploadFileAndInference(
     file: File,
     options: {
@@ -270,38 +346,23 @@ export class TextAnalysisAPI {
         throw new Error(`檔案上傳失敗: ${uploadResult.error}`)
       }
 
-      console.log('✅ 檔案上傳完成，開始推論...')
+      console.log('✅ 檔案上傳完成，開始建立推論任務...')
 
-      // 步驟 2: 從上傳的檔案進行推論
+      // 步驟 2: 建立推論任務（新的任務型 API）
       const source = (uploadResult.data as any)?.data?.name || destination
       const inferenceResult = await this.inferenceFromStorage(source, {
         output: options.outputPath
       })
 
-      if (!inferenceResult.success) {
-        throw new Error(`推論失敗: ${inferenceResult.error}`)
-      }
+      console.log('✅ 推論任務已建立！')
 
-      console.log('✅ 推論完成！')
-
-      // 步驟 3: 嘗試下載結果（無論是否為 verbose 模式）
-      let fullResult = undefined
-      if (inferenceResult.data?.output) {
-        console.log('📥 嘗試下載完整的 JSON 推論結果...')
-        const downloadResult = await this.downloadInferenceResult(inferenceResult.data.output)
-        if (downloadResult.success) {
-          fullResult = downloadResult.data
-        } else {
-          console.warn('⚠️ 無法下載完整結果:', downloadResult.error)
-        }
-      }
-
+      // 注意：新的 API 不會立即返回結果，需要通過 Firestore 監聽
       return {
         success: true,
         data: {
           uploadInfo: uploadResult.data,
-          inferenceInfo: inferenceResult.data,
-          inferenceResult: fullResult
+          inferenceInfo: inferenceResult as any, // 新的任務型 API 返回格式不同
+          inferenceResult: undefined // 新的 API 需要通過 Firestore 監聽獲取結果
         }
       }
 

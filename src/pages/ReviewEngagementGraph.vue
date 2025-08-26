@@ -113,7 +113,7 @@
         v-if="uploadedFile && !isProcessing"
         @click="sendJSONPayload"
         class="process-btn"
-        :disabled="!uploadedFile"
+        :disabled="!uploadedFile || !backendUploadResult"
       >
         🔮 推論分析並生成圖表
       </button>
@@ -121,7 +121,58 @@
       <!-- 處理中狀態 -->
       <div v-if="isProcessing" class="processing-indicator">
         <div class="spinner"></div>
-        <p>使用 Firebase SDK 推論分析中...</p>
+        <p v-if="taskStatus === 'PENDING'">建立推論任務中...</p>
+        <p v-else-if="taskStatus === 'PROCESSING'">🤖 AI 模型分析中，請耐心等待...</p>
+        <p v-else>處理中...</p>
+      </div>
+    </div>
+    
+    <!-- 更新任務狀態顯示區域 -->
+    <div v-if="currentTaskId" class="task-status-section">
+      <div class="task-info">
+        <h4>📋 推論任務狀態</h4>
+        <div class="task-details">
+          <p><strong>任務 ID:</strong> {{ currentTaskId.slice(0, 8) }}...</p>
+          <p><strong>狀態:</strong> 
+            <span :class="'status-' + taskStatus.toLowerCase()">
+              {{ getStatusText(taskStatus) }}
+            </span>
+          </p>
+          
+          <!-- 新增進度條和進度資訊 -->
+          <div v-if="taskProgress !== null && taskStatus === 'RUNNING'" class="progress-section">
+            <div class="progress-info">
+              <span class="progress-label">處理進度:</span>
+              <span class="progress-percentage">{{ taskProgress }}%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" :style="{ width: taskProgress + '%' }"></div>
+            </div>
+          </div>
+          
+          <!-- 進度訊息 -->
+          <p v-if="taskProgressMessage" class="progress-message">
+            <strong>🔄 進度訊息:</strong> {{ taskProgressMessage }}
+          </p>
+          
+          <!-- 推論訊息 -->
+          <p v-if="inferenceMessage && inferenceMessage !== taskProgressMessage">
+            <strong>📄 任務訊息:</strong> {{ inferenceMessage }}
+          </p>
+          
+          <!-- 新增時間資訊 -->
+          <div v-if="taskTimestamps.created_at" class="timestamp-section">
+            <p class="timestamp-item">
+              <strong>🕐 建立時間:</strong> {{ formatTimestamp(taskTimestamps.created_at) }}
+            </p>
+            <p v-if="taskTimestamps.started_at" class="timestamp-item">
+              <strong>🚀 開始時間:</strong> {{ formatTimestamp(taskTimestamps.started_at) }}
+            </p>
+            <p v-if="taskTimestamps.updated_at" class="timestamp-item">
+              <strong>🔄 更新時間:</strong> {{ formatTimestamp(taskTimestamps.updated_at) }}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -192,6 +243,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { textAnalysisAPI } from '@/services/textAnalysisAPI'
 import { UploadFileAPI } from '@/services/uploadFileAPI'
+import { getFirestore, doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 
 // 創建上傳 API 實例
 const uploadAPI = new UploadFileAPI()
@@ -221,6 +273,22 @@ const uploadStatus = ref<{type: string, message: string} | null>(null)
 const isProcessing = ref(false)
 const isUploading = ref(false)
 const backendUploadResult = ref<any>(null)
+
+// 新的推論任務相關狀態
+const currentTaskId = ref<string | null>(null)
+const taskStatus = ref<string>('idle')
+const inferenceMessage = ref<string>('')
+const taskProgress = ref<number | null>(null)
+const taskProgressMessage = ref<string>('')
+const taskTimestamps = ref<{
+  created_at?: string
+  started_at?: string
+  updated_at?: string
+  finished_at?: string
+}>({})
+
+// Firebase Firestore 監聽器
+let unsubscribeSnapshot: Unsubscribe | null = null
 
 const modes = [
   { value: 'all', label: 'All' },
@@ -284,6 +352,7 @@ const removeFile = () => {
   uploadedFile.value = null
   uploadStatus.value = null
   backendUploadResult.value = null
+  resetTaskState() // 重置任務狀態
   if (fileInput.value) {
     fileInput.value.value = ''
   }
@@ -298,8 +367,6 @@ const uploadFileToBackend = async () => {
 
   isUploading.value = true
   try {
-    console.log('🚀 開始上傳檔案到後端:', uploadedFile.value.name)
-    
     // 使用 uploadFileAPI 進行上傳
     const result = await uploadAPI.uploadToFirebase(
       uploadedFile.value, 
@@ -309,7 +376,6 @@ const uploadFileToBackend = async () => {
     if (result.success) {
       backendUploadResult.value = result
       showUploadStatus('success', '檔案已成功上傳到 Firebase Storage！')
-      console.log('✅ 檔案上傳成功，資料結構:', result.data)
     } else {
       throw new Error(result.error || '上傳失敗')
     }
@@ -384,125 +450,241 @@ const normalizeBackendData = (data: any) => {
 
     return null;
   } catch (err) {
-    console.warn('normalizeBackendData 發生錯誤：', err);
     return null;
   }
 }
 
+// Firebase Firestore 監聽器
+const db = getFirestore()
+
+// Firestore 監聽函數
+const listenToTaskStatus = (taskId: string) => {
+  if (unsubscribeSnapshot) {
+    unsubscribeSnapshot()
+  }
+
+  const taskDoc = doc(db, 'tasks', taskId)
+  
+  unsubscribeSnapshot = onSnapshot(taskDoc, (doc) => {
+    if (doc.exists()) {
+      const data = doc.data()
+      
+      // 更新基本狀態
+      taskStatus.value = data.status || 'PENDING'
+      inferenceMessage.value = data.message || ''
+      
+      // 更新進度資訊
+      taskProgress.value = data.progress !== undefined ? data.progress : null
+      taskProgressMessage.value = data.progress_message || ''
+      
+      // 更新時間戳
+      taskTimestamps.value = {
+        created_at: data.created_at,
+        started_at: data.started_at,
+        updated_at: data.updated_at,
+        finished_at: data.finished_at
+      }
+      
+      // 根據狀態更新 UI 訊息
+      if (data.status === 'COMPLETED') {
+        showUploadStatus('success', '🎉 推論已完成！正在處理結果...')
+        handleInferenceComplete(data)
+        
+        // 停止監聽
+        if (unsubscribeSnapshot) {
+          unsubscribeSnapshot()
+          unsubscribeSnapshot = null
+        }
+      } else if (data.status === 'FAILED' || data.status === 'ERROR') {
+        console.error('❌ 推論失敗:', data.error)
+        showUploadStatus('error', `推論失敗: ${data.error || '未知錯誤'}`)
+        isProcessing.value = false
+        taskStatus.value = 'FAILED'
+        
+        // 停止監聽
+        if (unsubscribeSnapshot) {
+          unsubscribeSnapshot()
+          unsubscribeSnapshot = null
+        }
+      } else if (data.status === 'PROCESSING' || data.status === 'RUNNING') {
+        taskStatus.value = data.status
+        
+        // 更新狀態訊息，包含進度資訊
+        let statusMessage = '🤖 AI 模型正在分析中，請耐心等待...'
+        if (data.progress !== undefined) {
+          statusMessage += ` (進度: ${data.progress}%)`
+        }
+        if (data.progress_message) {
+          statusMessage = `🤖 ${data.progress_message}`
+        }
+        
+        showUploadStatus('info', statusMessage)
+      } else if (data.status === 'PENDING') {
+        taskStatus.value = 'PENDING'
+        showUploadStatus('info', '⏳ 任務等待處理中...')
+      }
+    } else {
+      console.error('❌ 任務文檔不存在 - Task ID:', taskId)
+      showUploadStatus('error', '任務處理失敗：找不到任務記錄')
+      isProcessing.value = false
+      taskStatus.value = 'FAILED'
+      
+      // 停止監聽
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot()
+        unsubscribeSnapshot = null
+      }
+    }
+  }, (error) => {
+    console.error('❌ Firestore 監聽錯誤:', error)
+    showUploadStatus('error', `監聽失敗: ${error.message}`)
+    isProcessing.value = false
+    taskStatus.value = 'FAILED'
+  })
+}
+
+// 新增格式化時間戳的函數
+const formatTimestamp = (timestamp: string): string => {
+  if (!timestamp) return '未知'
+  
+  try {
+    const date = new Date(timestamp)
+    return date.toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+  } catch (error) {
+    return timestamp
+  }
+}
+
+// 更新狀態重置函數
+const resetTaskState = () => {
+  currentTaskId.value = null
+  taskStatus.value = 'idle'
+  inferenceMessage.value = ''
+  taskProgress.value = null
+  taskProgressMessage.value = ''
+  taskTimestamps.value = {}
+  if (unsubscribeSnapshot) {
+    unsubscribeSnapshot()
+    unsubscribeSnapshot = null
+  }
+}
+
+// 添加缺少的 getStatusText 函數
+const getStatusText = (status: string): string => {
+  const statusMap: Record<string, string> = {
+    idle: '待命中',
+    PENDING: '等待中',
+    PROCESSING: '處理中',
+    RUNNING: '執行中',
+    COMPLETED: '已完成',
+    FAILED: '失敗',
+    ERROR: '錯誤'
+  }
+  return statusMap[status] || status
+}
+
+// 處理推論完成的函數
+const handleInferenceComplete = async (taskData: any) => {
+  try {
+    // 從 output_file 下載結果
+    if (!taskData.output_file) {
+      throw new Error('推論完成但沒有輸出檔案')
+    }
+    
+    showUploadStatus('info', '正在下載推論結果...')
+    
+    const downloadResult = await textAnalysisAPI.downloadInferenceResult(taskData.output_file)
+    
+    if (!downloadResult.success) {
+      throw new Error(downloadResult.error || '下載失敗')
+    }
+    
+    const resultData = downloadResult.data
+    
+    // 正規化後端數據
+    const normalizedData = normalizeBackendData(resultData)
+    
+    if (normalizedData) {
+      rawData.value = normalizedData
+      
+      showUploadStatus('success', '✅ 推論完成！圖表正在更新...')
+      
+      await nextTick()
+      
+      // 重新初始化圖表
+      await initializeGraphs()
+      
+      showUploadStatus('success', '🎉 推論完成，圖表已更新！')
+    } else {
+      throw new Error('無法處理推論結果數據')
+    }
+    
+    isProcessing.value = false
+    taskStatus.value = 'COMPLETED'
+    
+  } catch (error: any) {
+    console.error('❌ 處理推論結果失敗:', error)
+    showUploadStatus('error', `處理結果失敗: ${error.message}`)
+    isProcessing.value = false
+    taskStatus.value = 'FAILED'
+  }
+}
+
+// 移除重複的 formatTimestamp 函數 - 已在上面定義
+
+// 移除重複的 removeFile 函數
+
+// 更新 sendJSONPayload 函數以初始化狀態
 const sendJSONPayload = async () => {
   if (!uploadedFile.value) {
     showUploadStatus('error', '請先上傳或選擇 JSON 檔案')
     return
   }
 
-  isProcessing.value = true
-  try {
-    console.log('🚀 開始使用 Firebase SDK 進行完整推論流程...')
-    
-    // 檢查是否已經上傳到後端
-    if (!backendUploadResult.value) {
-      showUploadStatus('error', '請先點擊「上傳檔案到後端」按鈕')
-      return
-    }
+  if (!backendUploadResult.value) {
+    showUploadStatus('error', '請先點擊「上傳檔案到後端」按鈕')
+    return
+  }
 
-    // 從後端上傳結果中取得檔案路徑
-    const uploadedFileName = (backendUploadResult.value.data as any)?.data?.name || (backendUploadResult.value.data as any)?.name
-    if (!uploadedFileName) {
+  // 重置所有任務相關狀態
+  resetTaskState()
+  
+  isProcessing.value = true
+  taskStatus.value = 'PENDING'
+  
+  try {
+    const uploadedPath = (backendUploadResult.value.data as any)?.data?.name || (backendUploadResult.value.data as any)?.name
+    if (!uploadedPath) {
       throw new Error('無法取得上傳檔案的路徑')
     }
+    
+    const gsUri = `gs://minnn-project.firebasestorage.app/${uploadedPath}`
+    
+    showUploadStatus('info', '正在建立推論任務...')
 
-    console.log('📁 使用已上傳的檔案進行推論:', uploadedFileName)
-    showUploadStatus('info', '正在進行推論...')
+    const inferResult = await textAnalysisAPI.inferenceFromStorage(gsUri)
+    
+    currentTaskId.value = inferResult.task_id
+    inferenceMessage.value = inferResult.message
+    
+    showUploadStatus('info', `任務已建立，開始監聽狀態更新...`)
+    
+    // 立即開始監聽
+    listenToTaskStatus(inferResult.task_id)
 
-    // 使用新的推論 API (不傳送 verbose 參數，使用後端預設行為)
-    const inferenceResult = await textAnalysisAPI.inferenceFromStorage(uploadedFileName)
-
-    if (!inferenceResult.success) {
-      throw new Error(inferenceResult.error || '推論失敗')
-    }
-
-    console.log('🔮 推論完成，後端回應結構:', inferenceResult.data)
-    console.log('📍 預期回應格式: { status: "success", data: { output: { bucket, name, gs_uri } } }')
-
-    // 檢查是否有推論結果輸出檔案位置資訊
-    if (inferenceResult.data?.output) {
-      console.log('� 使用 Firebase SDK 下載推論結果檔案...')
-      showUploadStatus('info', '正在使用 Firebase SDK 下載推論結果 (避免 CORS 限制)...')
-      
-      // 使用 Firebase SDK 下載推論結果
-      const downloadResult = await textAnalysisAPI.downloadInferenceResult(inferenceResult.data.output)
-      
-      if (downloadResult.success) {
-        console.log('✅ 成功使用 Firebase SDK 下載推論結果檔案')
-        console.log('📊 下載的檔案內容 (原始):', downloadResult.data)
-        console.log('📊 檔案內容資料類型:', typeof downloadResult.data)
-        console.log('📊 檔案內容鍵值:', Object.keys(downloadResult.data || {}))
-        
-        // 這應該是純粹的推論結果 JSON，不是包裝在 response 中
-        let actualData = downloadResult.data
-        
-        // 如果下載的是 API response 格式（有 status 和 data），提取實際資料
-        if (actualData && typeof actualData === 'object' && actualData.status && actualData.data) {
-          console.log('🔍 偵測到 API response 格式，提取實際資料...')
-          console.log('📊 Response status:', actualData.status)
-          console.log('📊 Response data:', actualData.data)
-          actualData = actualData.data
-        }
-        
-        // 如果還是有嵌套的 data，繼續提取
-        if (actualData && typeof actualData === 'object' && actualData.data && !Array.isArray(actualData)) {
-          console.log('🔍 發現嵌套的 data 欄位，繼續提取...')
-          actualData = actualData.data
-        }
-        
-        console.log('📊 最終提取的實際資料:', actualData)
-        console.log('📊 實際資料類型:', typeof actualData)
-        console.log('📊 實際資料鍵值:', Object.keys(actualData || {}))
-        
-        // 正規化後端回傳資料為舊格式
-        let finalData = actualData
-        const normalized = normalizeBackendData(actualData)
-        if (normalized) {
-          finalData = normalized
-          console.log('🔧 資料已正規化為舊格式')
-          console.log('🔧 正規化後的資料鍵值:', Object.keys(finalData))
-        } else {
-          console.log('⚠️ 資料無法正規化，使用原始資料')
-        }
-
-        // 設置資料到全域變數，供原本的 script 使用
-        rawData.value = finalData
-        availableHW.value = Object.keys(finalData).sort()
-        selectedHW.value = [...availableHW.value] // 預設全選
-        
-        console.log('📋 可用作業列表:', availableHW.value)
-        console.log('✅ 資料已準備完成，準備生成圖表')
-        
-        // 自動觸發圖表更新
-        await nextTick() // 確保 DOM 更新完成
-        
-        // 呼叫原本的圖表生成函數
-        if (originalFunctions.generateAllGraph && typeof originalFunctions.generateAllGraph === 'function') {
-          console.log('🎨 自動生成圖表...')
-          updateGraphMode('all') // 預設顯示 All 模式
-          showUploadStatus('success', '✅ Firebase SDK 解析完成並已自動生成圖表！')
-        } else {
-          showUploadStatus('success', '✅ Firebase SDK 解析完成！請點擊「生成圖表」按鈕查看結果')
-        }
-        
-      } else {
-        throw new Error(`Firebase SDK 下載失敗: ${downloadResult.error}`)
-      }
-    } else {
-      throw new Error('推論完成但未返回輸出檔案資訊')
-    }
-
-  } catch (err: unknown) {
-    console.error('❌ Firebase SDK 推論流程失敗:', err)
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    showUploadStatus('error', `Firebase SDK 處理失敗: ${errorMessage}`)
-  } finally {
+  } catch (error: any) {
+    console.error('❌ 推論流程失敗:', error)
+    showUploadStatus('error', `推論失敗: ${error.message}`)
     isProcessing.value = false
+    taskStatus.value = 'FAILED'
   }
 }
 
@@ -524,35 +706,22 @@ const loadOriginalScripts = async () => {
     // 避免重複載入導致 "Identifier ... has already been declared"
     if (!(window as any).BubbleChartManager) {
       await loadScript('/js/bubbleChart.js')
-    } else {
-      console.log('↩️ BubbleChartManager 已存在，略過載入')
     }
+    
     if (!(window as any).processReviewerData) {
       await loadScript('/js/graph_func.js')
-    } else {
-      console.log('↩️ processReviewerData 已存在，略過載入')
     }
+    
     if (!(window as any).generateAllGraph) {
       await loadScript('/js/graph_3labelFunc.js')
-    } else {
-      console.log('↩️ generateAllGraph 已存在，略過載入')
     }
+    
     if (!(window as any).updateGraphMode) {
       await loadScript('/js/main_graph.js')
-    } else {
-      console.log('↩️ updateGraphMode 已存在，略過載入')
     }
     
     // 再次確保所有函數都已載入
     await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // 診斷函數是否正確載入
-    console.log('🔍 檢查函數載入狀態:')
-    console.log('- BubbleChartManager:', typeof (window as any).BubbleChartManager)
-    console.log('- processReviewerData:', typeof (window as any).processReviewerData)
-    console.log('- generateAllGraph:', typeof (window as any).generateAllGraph)
-    console.log('- updateGraphMode:', typeof (window as any).updateGraphMode)
-    console.log('- updateNetworkInstance:', typeof (window as any).updateNetworkInstance)
     
     // 獲取原有函數的引用
     originalFunctions = {
@@ -564,7 +733,6 @@ const loadOriginalScripts = async () => {
       updateGraphMode: (window as any).updateGraphMode
     }
     
-    console.log('✅ 原有腳本載入完成')
     return true
   } catch (error) {
     console.error('❌ 腳本載入失敗:', error)
@@ -586,7 +754,6 @@ const loadScript = (src: string, isModule = false) => {
       }
     });
     if (existed) {
-      console.log(`↩️ 已存在腳本：${src}，略過重複載入`);
       return resolve();
     }
     const script = document.createElement('script');
@@ -876,6 +1043,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   // 清理資源
+  resetTaskState()
   if (bubbleChartManager.value && bubbleChartManager.value.destroy) {
     bubbleChartManager.value.destroy()
   }
@@ -956,8 +1124,8 @@ onBeforeUnmount(() => {
 .backend-upload-success {
   margin-top: 20px;
   padding: 20px;
-  background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
-  border: 1px solid #10b981;
+  background: linear-gradient(135deg, #FFEFF5);
+  border: 1px solid #C79CAB;
   border-radius: 12px;
   display: flex;
   align-items: flex-start;
@@ -965,7 +1133,7 @@ onBeforeUnmount(() => {
 }
 
 .backend-upload-success .success-icon {
-  background: #10b981;
+  background: #66BDEA;
   color: white;
   width: 24px;
   height: 24px;
@@ -985,13 +1153,13 @@ onBeforeUnmount(() => {
 .upload-result-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #065f46;
+  color: #AE8292;
   margin: 0 0 12px 0;
 }
 
 .upload-result-details {
   font-size: 0.95rem;
-  color: #047857;
+  color: #C1A7B1;
 }
 
 .upload-result-details p {
@@ -1004,7 +1172,7 @@ onBeforeUnmount(() => {
 }
 
 .upload-link {
-  color: #0d9488;
+  color: #C79CAB;
   text-decoration: none;
   font-weight: 500;
   margin-left: 8px;
@@ -1080,13 +1248,13 @@ h1 {
 }
 
 .upload-area.has-file {
-  border-color: #10b981;
-  background: #f0fdf4;
+  border-color: #66BDEA;
+  background: #E9F9FF;
 }
 
 .upload-area.upload-success {
-  border-color: #10b981;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border-color: #AE8292;
+  background: linear-gradient(135deg, #F3FBFF 0%, #F3FBFF 100%);
 }
 
 .upload-placeholder {
@@ -1122,7 +1290,7 @@ h1 {
 }
 
 .file-success-icon {
-  color: #10b981;
+  color: #4596C0;
   margin-bottom: 8px;
 }
 
@@ -1164,13 +1332,13 @@ h1 {
   margin-top: 16px;
   padding: 12px 20px;
   background: #d1fae5;
-  color: #065f46;
+  color: #C79CAB;
   border-radius: 8px;
   font-weight: 500;
 }
 
 .success-icon {
-  background: #10b981;
+  background: #C79CAB;
   color: white;
   width: 20px;
   height: 20px;
@@ -1246,7 +1414,10 @@ h1 {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 20px;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 16px;
+  border: 1px solid #bae6fd;
 }
 
 .spinner {
@@ -1264,9 +1435,11 @@ h1 {
 }
 
 .processing-indicator p {
-  color: #6b7280;
+  color: #0369a1;
   font-size: 1.1rem;
+  font-weight: 500;
   margin: 0;
+  text-align: center;
 }
 
 .switch-bar {
@@ -1403,7 +1576,7 @@ h1 {
 }
 
 .export-btn:hover {
-  background: #218838;
+  background: #C79CAB;
 }
 
 .bubble-chart-container {
@@ -1417,5 +1590,159 @@ h1 {
 #bubbleChart {
   width: 100%;
   height: 100%;
+}
+
+/* 新增任務狀態區域樣式 */
+.task-status-section {
+  max-width: 800px;
+  margin: 20px auto;
+  padding: 0 20px;
+}
+
+.task-info {
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid #e9ecef;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.task-info h4 {
+  margin: 0 0 16px 0;
+  color: #333;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.task-details p {
+  margin: 10px 0;
+  font-size: 0.95rem;
+  color: #555;
+}
+
+/* 更新進度相關樣式 */
+.progress-section {
+  margin: 16px 0;
+  padding: 12px;
+  background: #f8f9ff;
+  border-radius: 8px;
+  border: 1px solid #e0e7ff;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progress-label {
+  font-weight: 600;
+  color: #4f46e5;
+}
+
+.progress-percentage {
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: #4f46e5;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.progress-message {
+  margin: 12px 0 !important;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-left: 3px solid #3b82f6;
+  border-radius: 4px;
+  font-style: italic;
+}
+
+.timestamp-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.timestamp-item {
+  margin: 4px 0 !important;
+  font-size: 0.85rem !important;
+  color: #6b7280 !important;
+}
+
+/* 更新處理中狀態樣式 */
+.processing-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 16px;
+  border: 1px solid #bae6fd;
+}
+
+.processing-indicator p {
+  color: #0369a1;
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0;
+  text-align: center;
+}
+
+/* 狀態顏色更新 */
+.status-pending {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.status-processing, .status-running {
+  color: #0ea5e9;
+  font-weight: 600;
+}
+
+.status-completed {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.status-failed, .status-error {
+  color: #ef4444;
+  font-weight: 600;
 }
 </style>
