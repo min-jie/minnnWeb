@@ -3,6 +3,19 @@ import { apiConfig } from './apiConfig'
 import { storage } from '../firebase'
 import { ref, getDownloadURL } from 'firebase/storage'
 
+// 增加超時設定
+const TIMEOUT_MS = 300000 // 5分鐘，因為文本分析可能需要較長時間
+
+// 創建帶超時的 fetch 函數
+const fetchWithTimeout = (url: string, options: RequestInit = {}, timeout = TIMEOUT_MS) => {
+  return Promise.race([
+    fetch(url, options),
+    new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('請求超時')), timeout)
+    )
+  ])
+}
+
 export interface APIResponse<T> {
   success: boolean
   data?: T
@@ -43,7 +56,7 @@ export class TextAnalysisAPI {
   // 測試 API 連接
   async testConnection(): Promise<APIResponse<{ message: string }>> {
     try {
-      const response = await fetch(`${apiConfig.getBaseURL()}/health`)
+      const response = await fetchWithTimeout(`${apiConfig.getBaseURL()}/health`, {}, 10000) // 10秒超時
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`)
       }
