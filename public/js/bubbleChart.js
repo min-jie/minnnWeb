@@ -4,357 +4,282 @@
  */
 
 class BubbleChartManager {
-  constructor(canvasId) {
+  constructor(canvasId = 'bubbleChart') {
     this.canvasId = canvasId;
     this.chart = null;
-    this.data = null;
-    this.currentMode = "all";
-    this.isInitializing = false;
-    this.studentNames = []; // 本地存儲學生名稱
+    this.canvas = null;
+    this.ctx = null;
   }
 
-  init(rawData, mode = "all") {
-    // 防止重複初始化導致的無限遞迴
-    if (this.isInitializing) {
-      console.warn("⚠️ BubbleChart 正在初始化中，跳過重複調用");
+  init(rawData, mode = 'all') {
+    console.log('🫧 初始化氣泡圖...', { mode, dataKeys: Object.keys(rawData || {}) });
+    
+    if (!rawData || Object.keys(rawData).length === 0) {
+      console.warn('⚠️ 無數據可顯示氣泡圖');
       return;
     }
 
-    try {
-      this.isInitializing = true;
-      console.log("🔄 BubbleChart 初始化開始...", {
-        dataKeys: Object.keys(rawData),
-        mode,
-      });
-
-      // 銷毀舊圖表
-      if (this.chart) {
-        try {
-          this.chart.destroy();
-        } catch (e) {
-          console.warn("銷毀舊圖表失敗:", e);
-        }
-        this.chart = null;
-      }
-
-      // 處理數據
-      this.data = this.processData(rawData);
-      this.currentMode = mode;
-
-      // 檢查處理後的數據
-      if (!this.data || !this.data.nodes || this.data.nodes.length === 0) {
-        console.warn("⚠️ BubbleChart 數據為空，跳過初始化");
-        return;
-      }
-
-      console.log("📊 處理後的數據:", {
-        nodeCount: this.data.nodes.length,
-        studentNodes: this.data.nodes.filter((n) => n.group === "student")
-          .length,
-      });
-
-      // 重新創建圖表
-      this.createChart();
-
-      console.log("✅ BubbleChart 初始化完成");
-    } catch (error) {
-      console.error("❌ BubbleChart 初始化失敗:", error);
-      // 嘗試顯示錯誤信息而不是崩潰
-      this.showErrorMessage("初始化失敗");
-    } finally {
-      this.isInitializing = false;
-    }
+    this.createChart(rawData, mode);
   }
 
-  showErrorMessage(message) {
-    const canvas = document.getElementById(this.canvasId);
-    if (canvas) {
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.font = "16px Arial";
-      ctx.fillStyle = "#ff6b6b";
-      ctx.textAlign = "center";
-      ctx.fillText(`氣泡圖${message}`, canvas.width / 2, canvas.height / 2);
-    }
+  updateData(data, mode = 'all') {
+    console.log('🔄 更新氣泡圖數據...', { mode });
+    this.init(data, mode);
   }
 
-  createChart() {
-    const canvas = document.getElementById(this.canvasId);
-    if (!canvas) {
+  createChart(rawData, mode) {
+    this.canvas = document.getElementById(this.canvasId);
+    if (!this.canvas) {
       throw new Error(`Canvas element with id "${this.canvasId}" not found`);
     }
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      throw new Error("無法獲取Canvas 2D context");
+    this.ctx = this.canvas.getContext('2d');
+    if (!this.ctx) {
+      throw new Error('Cannot get 2D context from canvas');
     }
 
-    // 準備學生數據
-    const students = this.extractStudentData();
-    this.studentNames = students.map((s) => s.name);
+    // 清除現有圖表
+    if (this.chart) {
+      this.chart.destroy();
+      this.chart = null;
+    }
 
-    // 計算Y軸範圍
-    const yAxisMax = Math.max(students.length - 0.5, 1.5);
-    const yAxisMin = -0.5;
+    // 處理數據 - 使用與網路圖相同的邏輯
+    const chartData = this.processDataForBubbleChart(rawData, mode);
 
-    console.log(
-      `設置Y軸範圍: ${yAxisMin} 到 ${yAxisMax} (學生數: ${students.length})`,
-    );
-
-    // 準備氣泡數據
-    const bubbleData = this.prepareBubbleData();
-
-    // 創建最簡化的Chart.js配置
-    const config = this.createMinimalChartConfig(
-      yAxisMin,
-      yAxisMax,
-      bubbleData,
-    );
-
-    // 創建圖表
-    this.chart = new Chart(ctx, config);
-
-    console.log("✅ 圖表創建完成");
-  }
-
-  createMinimalChartConfig(yAxisMin, yAxisMax, bubbleData) {
-    // 為四個品質指標創建數據集
-    const datasets = [
-      {
-        label: "相關性",
-        data: bubbleData.filter((d) => d.labelType === 0),
-        backgroundColor: "rgba(255, 99, 132, 0.6)",
-        borderColor: "rgba(255, 99, 132, 1)",
-        borderWidth: 2,
+    // 建立圖表配置 - 修正為正確的氣泡圖配置
+    const config = {
+      type: 'bubble',
+      data: {
+        datasets: [{
+          label: '審查表現',
+          data: chartData.bubbleData,
+          backgroundColor: chartData.bubbleData.map(point => point.backgroundColor),
+          borderColor: chartData.bubbleData.map(point => point.borderColor),
+          borderWidth: 2
+        }]
       },
-      {
-        label: "具體性",
-        data: bubbleData.filter((d) => d.labelType === 1),
-        backgroundColor: "rgba(54, 162, 235, 0.6)",
-        borderColor: "rgba(54, 162, 235, 1)",
-        borderWidth: 2,
-      },
-      {
-        label: "建設性",
-        data: bubbleData.filter((d) => d.labelType === 2),
-        backgroundColor: "rgba(255, 206, 86, 0.6)",
-        borderColor: "rgba(255, 206, 86, 1)",
-        borderWidth: 2,
-      },
-      {
-        label: "總和",
-        data: bubbleData.filter((d) => d.labelType === 3),
-        backgroundColor: "rgba(75, 192, 192, 0.6)",
-        borderColor: "rgba(75, 192, 192, 1)",
-        borderWidth: 2,
-      },
-    ];
-
-    return {
-      type: "bubble",
-      data: { datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-          title: {
-            display: true,
-            text: "全班作業審查狀況多維氣泡圖",
-          },
-          legend: {
-            display: true,
-          },
-        },
         scales: {
           x: {
-            display: true,
-            title: { display: true, text: "品質指標" },
-            min: -0.5,
-            max: 3.5,
-            ticks: {
-              stepSize: 1,
-              callback: (value) => {
-                const labels = ["相關性", "具體性", "建設性", "總和"];
-                const roundedValue = Math.round(value);
-                return roundedValue >= 0 && roundedValue < labels.length
-                  ? labels[roundedValue]
-                  : "";
-              },
+            type: 'linear',
+            position: 'bottom',
+            title: {
+              display: true,
+              text: this.getXAxisTitle(mode),
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
             },
+            min: 0,
+            max: 1,
+            ticks: {
+              stepSize: 0.1,
+              callback: function(value) {
+                return (value * 100).toFixed(0) + '%';
+              }
+            }
           },
           y: {
-            display: true,
-            title: { display: true, text: "學生" },
-            min: yAxisMin,
-            max: yAxisMax,
+            type: 'linear',
+            title: {
+              display: true,
+              text: '學生編號',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            },
+            min: -0.5,
+            max: chartData.studentIds.length - 0.5,
             ticks: {
               stepSize: 1,
-              callback: (value) => {
-                const roundedValue = Math.round(value);
-                return roundedValue >= 0 && roundedValue < 50
-                  ? `S${roundedValue + 1}`
-                  : "";
+              callback: function(value) {
+                const index = Math.round(value);
+                return chartData.studentIds[index] || '';
               },
-            },
-          },
+              font: {
+                size: 10
+              }
+            }
+          }
         },
-      },
-    };
-  }
-
-  // 空的更新方法，避免調用
-  updateChart() {
-    console.log("⚠️ updateChart 被調用但已禁用，避免循環引用");
-  }
-
-  prepareBubbleData() {
-    const students = this.extractStudentData();
-    const bubbleData = [];
-
-    console.log(`準備氣泡圖資料：共 ${students.length} 位學生`);
-
-    // 為每個學生創建氣泡
-    students.forEach((student, studentIndex) => {
-      // 為四個品質指標創建氣泡
-      for (let labelType = 0; labelType < 4; labelType++) {
-        let labelRatio = 0;
-
-        // 計算標籤比例
-        if (labelType === 3) {
-          // 總和模式
-          labelRatio = student.averageLabelRatio;
-        } else {
-          const labelCounts = [
-            student.relevanceCount,
-            student.concretenessCount,
-            student.constructiveCount,
-          ];
-          labelRatio =
-            labelCounts[labelType] / Math.max(student.validComments, 1);
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            callbacks: {
+              title: function(context) {
+                const yIndex = Math.round(context[0].parsed.y);
+                const studentId = chartData.studentIds[yIndex];
+                return `學號: ${studentId}`;
+              },
+              label: function(context) {
+                const point = context.raw;
+                const yIndex = Math.round(context.parsed.y);
+                const studentId = chartData.studentIds[yIndex];
+                return [
+                  `${context.dataset.label}: ${(point.x * 100).toFixed(1)}%`,
+                  `審查參與度: ${(point.participationRate * 100).toFixed(1)}%`,
+                  `完成作業數: ${point.completedAssignments}/${point.totalAssignments}`
+                ];
+              }
+            }
+          }
         }
-
-        // 氣泡大小
-        const bubbleSize = Math.max(student.reviewCompletionRate * 15 + 3, 3);
-
-        bubbleData.push({
-          x: labelType,
-          y: studentIndex,
-          r: bubbleSize,
-          studentName: student.name,
-          labelType: labelType,
-          labelRatio: labelRatio,
-          reviewCompletionRate: student.reviewCompletionRate,
-          validComments: student.validComments,
-          assignedTasks: student.assignedTasks,
-        });
       }
-    });
+    };
 
-    console.log(`氣泡圖資料準備完成，共 ${bubbleData.length} 個氣泡`);
-    return bubbleData;
+    // 建立圖表
+    this.chart = new Chart(this.ctx, config);
+    console.log('✅ 氣泡圖建立完成');
   }
 
-  extractStudentData() {
-    if (!this.data || !this.data.nodes) {
-      return [];
+  processDataForBubbleChart(rawData, mode) {
+    console.log('🔄 處理氣泡圖數據...', { mode });
+
+    // 檢查是否有 processReviewerData 函數
+    if (!window.processReviewerData) {
+      console.error('❌ processReviewerData 函數不存在');
+      return { bubbleData: [], studentIds: [] };
     }
 
-    const students = [];
-    this.data.nodes.forEach((node) => {
-      if (node.group === "student") {
-        const reviewCompletionRate =
-          (node.validComments || 0) / Math.max(node.assignedTasks || 1, 1);
-        const validRoundsCount = Math.max(
-          node.validRounds || node.validComments || 0,
-          1,
-        );
-        const relevanceRatio = (node.relevanceCount || 0) / validRoundsCount;
-        const concretenessRatio =
-          (node.concretenessCount || 0) / validRoundsCount;
-        const constructiveRatio =
-          (node.constructiveCount || 0) / validRoundsCount;
-        const averageLabelRatio =
-          (relevanceRatio + concretenessRatio + constructiveRatio) / 3;
+    // 使用與網路圖相同的數據處理邏輯
+    const hwNames = Object.keys(rawData);
+    const { nodes } = window.processReviewerData(rawData, mode, hwNames);
 
-        students.push({
-          id: node.id,
-          name: node.label,
-          validComments: node.validComments || 0,
-          validRounds: node.validRounds || 0,
-          assignedTasks: node.assignedTasks || 0,
-          relevanceCount: node.relevanceCount || 0,
-          concretenessCount: node.concretenessCount || 0,
-          constructiveCount: node.constructiveCount || 0,
-          reviewCompletionRate: reviewCompletionRate,
-          averageLabelRatio: averageLabelRatio,
-        });
+    // 節點顏色規則 (與網路圖相同)
+    const colorConfig = {
+      relevance: {
+        colors: ["#FFEEB7", "#FFD753", "#F1BC0D", "#D4A302"],
+        title: "相關性分數",
+      },
+      concreteness: {
+        colors: ["#CFFFCA", "#95ED65", "#54AF23", "#327111"],
+        title: "具體性分數",
+      },
+      constructive: {
+        colors: ["#F1DCFF", "#C78EED", "#9444CA", "#590A8E"],
+        title: "建設性分數",
+      },
+      all: {
+        colors: ["#F0F0F0", "#E0E0E0", "#757575", "#424242"],
+        title: "綜合表現分數",
+      },
+    };
+
+    // 處理每個學生的數據
+    const bubbleData = [];
+    const studentIds = [];
+
+    nodes.forEach((n, index) => {
+      // 計算參與度 (與網路圖相同邏輯)
+      const assignmentCount = n.feedbacks ? n.feedbacks.length : 0;
+      const completedAssignments = n.feedbacks ? n.feedbacks.filter((fb) => fb !== "").length : 0;
+      const participationRate = assignmentCount > 0 ? completedAssignments / assignmentCount : 0;
+
+      // 計算分數 (與網路圖相同邏輯)
+      const totalFeedbacks = n.feedbacks ? n.feedbacks.filter((fb) => fb !== "").length : 0;
+      let score;
+
+      if (mode === "all") {
+        // All mode: 計算三個標籤score的平均
+        if (totalFeedbacks > 0 && n.labelCounts) {
+          const relevanceScore = (n.labelCounts.relevance || 0) / totalFeedbacks;
+          const concretenessScore = (n.labelCounts.concreteness || 0) / totalFeedbacks;
+          const constructiveScore = (n.labelCounts.constructive || 0) / totalFeedbacks;
+          score = (relevanceScore + concretenessScore + constructiveScore) / 3;
+        } else {
+          score = 0;
+        }
+      } else {
+        // 單一標籤模式
+        if (totalFeedbacks > 0 && n.labelCounts && n.labelCounts[mode] !== undefined) {
+          score = n.labelCounts[mode] / totalFeedbacks;
+        } else {
+          score = 0;
+        }
       }
-    });
 
-    // 按審查參與度排序
-    students.sort((a, b) => b.reviewCompletionRate - a.reviewCompletionRate);
-    return students;
-  }
+      // 計算顏色 (與網路圖相同的4分級邏輯)
+      let color;
+      if (score >= 0.75) color = colorConfig[mode].colors[3]; // 最深色 (75%以上)
+      else if (score >= 0.5) color = colorConfig[mode].colors[2]; // 深色 (50-75%)
+      else if (score >= 0.25) color = colorConfig[mode].colors[1]; // 淺色 (25-50%)
+      else color = colorConfig[mode].colors[0]; // 最淺色 (25%以下)
 
-  processData(rawData) {
-    const students = new Map();
+      // 計算氣泡大小 (基於參與度，與網路圖相同邏輯)
+      const bubbleSize = 5 + participationRate * 15; // 5-20 的範圍
 
-    console.log("🔄 處理原始數據:", Object.keys(rawData));
-
-    Object.keys(rawData).forEach((hwName) => {
-      const hwData = rawData[hwName];
-      if (!hwData || !Array.isArray(hwData)) return;
-
-      hwData.forEach((entry) => {
-        const reviewerName = entry.Reviewer_Name;
-        if (!reviewerName) return;
-
-        if (!students.has(reviewerName)) {
-          students.set(reviewerName, {
-            id: reviewerName,
-            name: reviewerName,
-            validComments: 0,
-            validRounds: 0,
-            assignedTasks: 0,
-            relevanceCount: 0,
-            concretenessCount: 0,
-            constructiveCount: 0,
-          });
-        }
-
-        const student = students.get(reviewerName);
-        student.assignedTasks += 1;
-
-        if (entry.Round && Array.isArray(entry.Round)) {
-          entry.Round.forEach((round) => {
-            if (round.feedback && round.feedback.trim() !== "") {
-              student.validComments += 1;
-              student.validRounds += 1;
-
-              if (round.Relevance > 0)
-                student.relevanceCount += round.Relevance;
-              if (round.Concreteness > 0)
-                student.concretenessCount += round.Concreteness;
-              if (round.Constructive > 0)
-                student.constructiveCount += round.Constructive;
-            }
-          });
-        }
+      studentIds.push(n.id);
+      bubbleData.push({
+        x: score, // X軸: 表現分數
+        y: index, // Y軸: 學生索引 (用於定位)
+        r: bubbleSize, // 氣泡大小: 參與度
+        backgroundColor: color,
+        borderColor: color,
+        participationRate: participationRate,
+        completedAssignments: completedAssignments,
+        totalAssignments: assignmentCount,
+        score: score,
+        studentId: n.id
       });
     });
 
-    const result = {
-      nodes: Array.from(students.values()).map((student) => ({
-        ...student,
-        group: "student",
-        label: student.name,
-      })),
-    };
+    // 按學號排序
+    const sortedIndices = studentIds
+      .map((id, index) => ({ id, index }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((item, newIndex) => ({ ...item, newIndex }));
 
-    console.log(`✅ 數據處理完成，共 ${result.nodes.length} 位學生`);
-    return result;
+    const sortedStudentIds = sortedIndices.map(item => item.id);
+    const sortedBubbleData = sortedIndices.map(item => {
+      const originalData = bubbleData[item.index];
+      return {
+        ...originalData,
+        y: item.newIndex // 更新 Y 位置
+      };
+    });
+
+    console.log('✅ 氣泡圖數據處理完成:', {
+      studentsCount: sortedStudentIds.length,
+      mode: mode,
+      sampleData: sortedBubbleData.slice(0, 3)
+    });
+
+    return {
+      bubbleData: sortedBubbleData,
+      studentIds: sortedStudentIds
+    };
+  }
+
+  getXAxisTitle(mode) {
+    const titles = {
+      relevance: '相關性分數',
+      concreteness: '具體性分數', 
+      constructive: '建設性分數',
+      all: '綜合表現分數'
+    };
+    return titles[mode] || '表現分數';
+  }
+
+  // 匯出功能
+  exportChart(filename = 'bubble-chart.png') {
+    if (!this.canvas) {
+      console.error('Canvas not found');
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = this.canvas.toDataURL();
+    link.click();
   }
 }
 
-// 匯出供其他模組使用
+// 暴露到全域
 window.BubbleChartManager = BubbleChartManager;

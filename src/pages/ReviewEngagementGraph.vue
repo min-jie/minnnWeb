@@ -988,6 +988,12 @@ const updateGraphMode = (mode: string) => {
   }
 }
 
+// 新增：applySelection 函數，根據選擇的作業生成圖表
+const applySelection = () => {
+  // 重新生成圖表，使用目前的模式和選擇的作業
+  updateGraphMode(currentMode.value)
+}
+
 // 處理推論完成的函數
 const handleInferenceComplete = async (taskData: any) => {
   try {
