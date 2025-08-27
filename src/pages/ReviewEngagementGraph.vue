@@ -211,7 +211,8 @@
       <div id="review-graph"></div>
     </div>
 
-    <!-- Bubble Chart 區塊 -->
+    <!-- 
+    ==================== 氣泡圖區塊已暫時註解掉 ====================
     <div class="bubble-chart-section">
       <h2>🫧 全班作業審查狀況多維氣泡圖</h2>
       <p class="bubble-description">
@@ -221,7 +222,6 @@
         <small class="sub-note">※ 網路圖節點大小也使用相同的審查參與度計算，方便比較學生作業完成狀況</small>
       </p>
       
-      <!-- Vue 控制的匯出按鈕 -->
       <div class="export-controls">
         <button @click="exportBubbleChart('normal')" class="export-btn">
           💾 匯出氣泡圖為 PNG
@@ -231,11 +231,12 @@
         </button>
       </div>
       
-      <!-- Bubble Chart 圖表 -->
       <div class="bubble-chart-container">
         <canvas id="bubbleChart"></canvas>
       </div>
     </div>
+    ======================================================================= 
+    -->
   </div>
 </template>
 
@@ -262,7 +263,7 @@ const currentMode = ref('all')
 const selectedHW = ref<string[]>([])
 const availableHW = ref<string[]>([])
 const rawData = ref<any>(null)
-const bubbleChartManager = ref<any>(null)
+// const bubbleChartManager = ref<any>(null) // 氣泡圖管理器暫時註解掉
 const isInitialized = ref(false)
 
 // 檔案上傳相關響應式數據
@@ -424,6 +425,15 @@ const normalizeBackendData = (data: any) => {
       });
     };
 
+    // 新增：處理推論結果格式 { processed_data: { HW1: [...] } }
+    if (data.processed_data && typeof data.processed_data === 'object') {
+      const converted: Record<string, any[]> = {};
+      Object.keys(data.processed_data).forEach((hw) => {
+        converted[hw] = extractArray(data.processed_data[hw]);
+      });
+      return converted;
+    }
+
     // 格式1：{ data: { results: { HW1: [...] } } }
     if (data.data && data.data.results && typeof data.data.results === 'object') {
       const converted: Record<string, any[]> = {};
@@ -450,6 +460,7 @@ const normalizeBackendData = (data: any) => {
 
     return null;
   } catch (err) {
+    console.error('❌ 數據正規化失敗:', err);
     return null;
   }
 }
@@ -696,17 +707,16 @@ const loadOriginalScripts = async () => {
       await loadScript('https://unpkg.com/vis-network/standalone/umd/vis-network.min.js')
     }
     
-    // 載入 Chart.js
-    if (!(window as any).Chart) {
-      await loadScript('https://cdn.jsdelivr.net/npm/chart.js')
-      await loadScript('https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@latest')
-    }
+    // 載入 Chart.js (暫時註解掉，因為主要用於氣泡圖)
+    // if (!(window as any).Chart) {
+    //   await loadScript('https://cdn.jsdelivr.net/npm/chart.js')
+    //   await loadScript('https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@latest')
+    // }
     
-    // 載入您的原有模組（需要將這些文件放到 public 資料夾）
-    // 避免重複載入導致 "Identifier ... has already been declared"
-    if (!(window as any).BubbleChartManager) {
-      await loadScript('/js/bubbleChart.js')
-    }
+    // 載入氣泡圖模組 (暫時註解掉)
+    // if (!(window as any).BubbleChartManager) {
+    //   await loadScript('/js/bubbleChart.js')
+    // }
     
     if (!(window as any).processReviewerData) {
       await loadScript('/js/graph_func.js')
@@ -729,7 +739,7 @@ const loadOriginalScripts = async () => {
       generateRelevanceGraph: (window as any).generateRelevanceGraph,
       generateConcretenessGraph: (window as any).generateConcretenessGraph,
       generateConstructiveGraph: (window as any).generateConstructiveGraph,
-      BubbleChartManager: (window as any).BubbleChartManager,
+      // BubbleChartManager: (window as any).BubbleChartManager, // 氣泡圖管理器暫時註解掉
       updateGraphMode: (window as any).updateGraphMode
     }
     
@@ -853,16 +863,16 @@ const loadData = async () => {
 
 // 初始化圖表
 const initializeGraphs = async () => {
-  if (!originalFunctions.BubbleChartManager) {
-    console.warn('⚠️ 函數尚未載入，無法初始化圖表')
-    return
-  }
+  // if (!originalFunctions.BubbleChartManager) { // 氣泡圖檢查暫時註解掉
+  //   console.warn('⚠️ 函數尚未載入，無法初始化圖表')
+  //   return
+  // }
   
   try {
     // 如果有數據，初始化圖表
     if (rawData.value) {
-      // 初始化 Bubble Chart
-      bubbleChartManager.value = new originalFunctions.BubbleChartManager('bubbleChart')
+      // 初始化 Bubble Chart (暫時註解掉)
+      // bubbleChartManager.value = new originalFunctions.BubbleChartManager('bubbleChart')
       
       // 初始化網路圖
       await nextTick() // 確保 DOM 已更新
@@ -919,14 +929,20 @@ const updateGraphMode = (mode: string) => {
       }
     }
     
-    // 更新氣泡圖
-    updateBubbleChart(hwNames)
+    // 更新氣泡圖 (暫時註解掉)
+    // updateBubbleChart(hwNames)
   } catch (error) {
     console.error('❌ 模式切換失敗:', error)
   }
 }
 
-// 更新氣泡圖
+// 新增 applySelection 方法：點擊「生成圖表」時，根據目前模式和選擇的作業生成圖表
+const applySelection = () => {
+  updateGraphMode(currentMode.value)
+}
+
+// 更新氣泡圖 (暫時註解掉整個函數)
+/*
 const updateBubbleChart = (hwNames: string[]) => {
   if (!bubbleChartManager.value || !rawData.value) {
     console.log('⏭️ 跳過氣泡圖更新：管理器或數據不存在')
@@ -960,17 +976,10 @@ const updateBubbleChart = (hwNames: string[]) => {
     showUploadStatus('warning', '氣泡圖更新失敗，請重新載入頁面後再試')
   }
 }
+*/
 
-// 應用選擇
-const applySelection = () => {
-  if (selectedHW.value.length === 0) {
-    alert('請至少選擇一個作業！')
-    return
-  }
-  updateGraphMode(currentMode.value)
-}
-
-// 匯出功能
+// 匯出功能 (暫時註解掉氣泡圖匯出功能)
+/*
 const exportBubbleChart = (type: string) => {
   const canvas = document.getElementById('bubbleChart') as HTMLCanvasElement
   if (!canvas) {
@@ -1018,6 +1027,7 @@ const exportBubbleChart = (type: string) => {
     URL.revokeObjectURL(url)
   }, 'image/png')
 }
+*/
 
 // 生命週期
 onMounted(async () => {
@@ -1044,12 +1054,13 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   // 清理資源
   resetTaskState()
-  if (bubbleChartManager.value && bubbleChartManager.value.destroy) {
-    bubbleChartManager.value.destroy()
-  }
+  // if (bubbleChartManager.value && bubbleChartManager.value.destroy) { // 氣泡圖清理暫時註解掉
+  //   bubbleChartManager.value.destroy()
+  // }
 })
 </script>
 
+<!-- 樣式保持不變，氣泡圖相關樣式暫時保留以備後續使用 -->
 <style scoped>
 /* 保持原有樣式，並新增以下樣式 */
 
