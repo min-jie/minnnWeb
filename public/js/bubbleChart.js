@@ -1,6 +1,6 @@
 /**
  * Bubble Chart 氣泡圖功能
- * 每個學生有四個氣泡，分別代表四個品質指標
+ * 每個學生的四個品質指標氣泡排列在同一水平線上
  */
 
 class BubbleChartManager {
@@ -47,7 +47,7 @@ class BubbleChartManager {
     // 處理數據 - 生成四個品質指標的數據
     const chartData = this.processDataForBubbleChart(rawData);
 
-    // 建立圖表配置 - 四個品質指標的氣泡圖
+    // 建立圖表配置 - 四個品質指標排列在不同 X 位置
     const config = {
       type: 'bubble',
       data: {
@@ -87,23 +87,20 @@ class BubbleChartManager {
         maintainAspectRatio: false,
         scales: {
           x: {
-            type: 'linear',
+            type: 'category',
             position: 'bottom',
+            labels: ['相關性', '具體性', '建設性', '綜合'],
             title: {
               display: true,
-              text: '綜合表現分數',
+              text: '品質指標',
               font: {
                 size: 14,
                 weight: 'bold'
               }
             },
-            min: 0,
-            max: 1,
-            ticks: {
-              stepSize: 0.1,
-              callback: function(value) {
-                return (value * 100).toFixed(0) + '%';
-              }
+            grid: {
+              display: true,
+              drawTicks: true
             }
           },
           y: {
@@ -127,6 +124,10 @@ class BubbleChartManager {
               font: {
                 size: 10
               }
+            },
+            grid: {
+              display: true,
+              drawTicks: true
             }
           }
         },
@@ -142,14 +143,16 @@ class BubbleChartManager {
           tooltip: {
             callbacks: {
               title: function(context) {
-                const yIndex = Math.round(context[0].parsed.y);
-                const studentId = chartData.studentIds[yIndex];
-                return `學號: ${studentId}`;
+                const point = context[0].raw;
+                return `學號: ${point.studentId}`;
               },
               label: function(context) {
                 const point = context.raw;
+                const datasetLabel = context.dataset.label;
+                
+                // 只顯示當前品質指標的相關信息
                 return [
-                  `${context.dataset.label}: ${(point.x * 100).toFixed(1)}%`,
+                  `${datasetLabel}: ${(point.score * 100).toFixed(1)}%`,
                   `審查參與度: ${(point.participationRate * 100).toFixed(1)}%`,
                   `完成作業數: ${point.completedAssignments}/${point.totalAssignments}`
                 ];
@@ -207,6 +210,14 @@ class BubbleChartManager {
     const datasets = {};
     let studentIds = [];
 
+    // X 軸位置對應 (0=相關性, 1=具體性, 2=建設性, 3=綜合)
+    const xPositions = {
+      'relevance': 0,
+      'concreteness': 1,
+      'constructive': 2,
+      'all': 3
+    };
+
     modes.forEach(mode => {
       const { nodes } = window.processReviewerData(rawData, mode, hwNames);
       const bubbleData = [];
@@ -247,8 +258,8 @@ class BubbleChartManager {
         else if (score >= 0.25) color = colorConfig[mode].colors[1]; // 淺色 (25-50%)
         else color = colorConfig[mode].colors[0]; // 最淺色 (25%以下)
 
-        // 計算氣泡大小 (基於參與度)
-        const bubbleSize = 5 + participationRate * 15; // 5-20 的範圍
+        // 計算氣泡大小 (基於參與度，讓參與度高的氣泡更大)
+        const bubbleSize = 8 + participationRate * 15; // 8-23 的範圍，基於參與度
 
         // 儲存學號 (只需要一次)
         if (mode === 'relevance') {
@@ -256,9 +267,9 @@ class BubbleChartManager {
         }
 
         bubbleData.push({
-          x: score, // X軸: 表現分數
+          x: xPositions[mode], // X軸: 品質指標位置 (0, 1, 2, 3)
           y: index, // Y軸: 學生索引
-          r: bubbleSize, // 氣泡大小: 參與度
+          r: bubbleSize, // 氣泡大小: 基於參與度
           backgroundColor: color,
           borderColor: color,
           participationRate: participationRate,
