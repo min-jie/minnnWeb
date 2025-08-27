@@ -296,7 +296,7 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { textAnalysisAPI } from '@/services/textAnalysisAPI'
 import { UploadFileAPI } from '@/services/uploadFileAPI'
-import { getFirestore, doc, onSnapshot, type Unsubscribe, type DocumentData } from 'firebase/firestore'
+import { getFirestore, doc, onSnapshot, type Unsubscribe } from 'firebase/firestore'
 
 // 創建上傳 API 實例
 const uploadAPI = new UploadFileAPI()
@@ -898,30 +898,6 @@ const initializeGraphs = async () => {
   }
 }
 
-// 更新：從網路圖數據更新氣泡圖的函數
-const updateBubbleChartWithNetworkData = () => {
-  if (!bubbleChartManager.value) {
-    console.log('⏭️ 跳過氣泡圖更新：管理器不存在')
-    return
-  }
-  
-  if (!rawData.value) {
-    console.log('⏭️ 跳過氣泡圖更新：沒有原始數據')
-    return
-  }
-  
-  try {
-    console.log('🔄 從 rawData 更新氣泡圖...')
-    
-    // 直接使用 rawData 和當前模式更新氣泡圖
-    bubbleChartManager.value.init(rawData.value, currentMode.value)
-    
-    console.log('✅ 氣泡圖更新完成（從 rawData）')
-  } catch (error) {
-    console.error('❌ 氣泡圖更新失敗:', error)
-    showUploadStatus('warning', '氣泡圖更新失敗，請重新載入頁面後再試')
-  }
-}
 
 // 圖表模式切換（調用原有邏輯）
 const updateGraphMode = (mode: string) => {
