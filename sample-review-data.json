@@ -2,7 +2,7 @@
   "HW1": [
     {
       "Author_Name": "StudentA",
-      "Reviewer_Name": "Alice", 
+      "Reviewer_Name": "Alice",
       "Assignment": "HW1",
       "Round": [
         {
@@ -14,9 +14,9 @@
       ]
     },
     {
-      "Author_Name": "StudentB", 
+      "Author_Name": "StudentB",
       "Reviewer_Name": "Bob",
-      "Assignment": "HW1", 
+      "Assignment": "HW1",
       "Round": [
         {
           "Relevance": 0.76,

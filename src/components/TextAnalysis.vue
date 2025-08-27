@@ -7,36 +7,41 @@
 
     <!-- 檔案上傳區 -->
     <div class="upload-section">
-      <div 
+      <div
         class="upload-area"
-        :class="{ 
+        :class="{
           'drag-over': isDragOver,
           'has-file': selectedFile,
-          'upload-success': uploadSuccess
+          'upload-success': uploadSuccess,
         }"
         @dragover="handleDragOver"
         @dragleave="handleDragLeave"
         @drop="handleFileDrop"
         @click="triggerFileInput"
       >
-        <input 
-          ref="fileInput" 
-          type="file" 
+        <input
+          ref="fileInput"
+          type="file"
           accept=".json"
           style="display: none"
           @change="handleFileSelect"
         />
-        
+
         <div class="upload-content">
-          <div v-if="!selectedFile && !uploadSuccess" class="upload-placeholder">
+          <div
+            v-if="!selectedFile && !uploadSuccess"
+            class="upload-placeholder"
+          >
             <div class="upload-icon">📁</div>
             <div class="upload-text">點擊或拖拽檔案至此上傳</div>
           </div>
-          
+
           <div v-else-if="selectedFile && !uploadSuccess" class="file-info">
             <div class="file-details">
               <div class="file-name">{{ selectedFile.name }}</div>
-              <div class="file-size">{{ formatFileSize(selectedFile.size) }}</div>
+              <div class="file-size">
+                {{ formatFileSize(selectedFile.size) }}
+              </div>
               <button class="remove-btn" @click.stop="removeFile">×</button>
             </div>
           </div>
@@ -46,11 +51,16 @@
             <div class="success-text">檔案上傳成功！</div>
             <div class="upload-details" v-if="uploadResult">
               <div class="detail-item">
-                <strong>檔案位置:</strong> {{ uploadResult.data?.name || 'N/A' }}
+                <strong>檔案位置:</strong>
+                {{ uploadResult.data?.name || "N/A" }}
               </div>
               <div class="detail-item" v-if="uploadResult.data?.public_url">
-                <strong>公開連結:</strong> 
-                <a :href="uploadResult.data.public_url" target="_blank" class="url-link">
+                <strong>公開連結:</strong>
+                <a
+                  :href="uploadResult.data.public_url"
+                  target="_blank"
+                  class="url-link"
+                >
                   查看檔案
                 </a>
               </div>
@@ -67,7 +77,7 @@
 
     <!-- 處理按鈕 -->
     <div class="process-section">
-      <button 
+      <button
         class="process-btn"
         :disabled="!selectedFile || analyzing || !apiConnected"
         @click="performAnalysis"
@@ -78,11 +88,11 @@
         </span>
         <span v-else>進行資料處理</span>
       </button>
-      
+
       <!-- API 連接狀態 -->
       <div class="connection-status">
         <span :class="apiConnected ? 'connected' : 'disconnected'">
-          {{ apiConnected ? '✅ API 已連接' : '❌ API 未連接' }}
+          {{ apiConnected ? "✅ API 已連接" : "❌ API 未連接" }}
         </span>
         <button class="test-btn" @click="testConnection">測試連接</button>
       </div>
@@ -103,7 +113,9 @@
       <div class="results-header">
         <h2>分析結果</h2>
         <div class="results-actions">
-          <button @click="exportResultsAsJSON" class="export-btn">導出 JSON</button>
+          <button @click="exportResultsAsJSON" class="export-btn">
+            導出 JSON
+          </button>
           <button @click="clearResults" class="clear-btn">清除結果</button>
         </div>
       </div>
@@ -131,15 +143,17 @@
       <!-- 原始 JSON 結果 -->
       <div class="json-results">
         <h3>原始回應資料</h3>
-        <pre class="json-display">{{ JSON.stringify(analysisResults, null, 2) }}</pre>
+        <pre class="json-display">{{
+          JSON.stringify(analysisResults, null, 2)
+        }}</pre>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useTextAnalysis } from '@/composables/useTextAnalysis'
+import { ref, onMounted } from "vue";
+import { useTextAnalysis } from "@/composables/useTextAnalysis";
 
 const {
   selectedFile,
@@ -154,83 +168,83 @@ const {
   performAnalysis: originalPerformAnalysis, // 重新命名避免衝突
   exportResultsAsJSON,
   clearResults,
-  init
-} = useTextAnalysis()
+  init,
+} = useTextAnalysis();
 
 // 本地響應式狀態
-const fileInput = ref<HTMLInputElement | null>(null)
-const isDragOver = ref(false)
-const uploadSuccess = ref(false)
-const uploadResult = ref<any>(null)
+const fileInput = ref<HTMLInputElement | null>(null);
+const isDragOver = ref(false);
+const uploadSuccess = ref(false);
+const uploadResult = ref<any>(null);
 
 const triggerFileInput = () => {
-  fileInput.value?.click()
-}
+  fileInput.value?.click();
+};
 
 const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0] || null
-  uploadSuccess.value = false
-  uploadResult.value = null
-  await composableHandleFileSelect(file)
-}
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0] || null;
+  uploadSuccess.value = false;
+  uploadResult.value = null;
+  await composableHandleFileSelect(file);
+};
 
 const handleDragOver = (event: DragEvent) => {
-  event.preventDefault()
-  isDragOver.value = true
-}
+  event.preventDefault();
+  isDragOver.value = true;
+};
 
 const handleDragLeave = (event: DragEvent) => {
-  event.preventDefault()
-  isDragOver.value = false
-}
+  event.preventDefault();
+  isDragOver.value = false;
+};
 
 const handleFileDrop = async (event: DragEvent) => {
-  event.preventDefault()
-  isDragOver.value = false
-  
-  const files = event.dataTransfer?.files
+  event.preventDefault();
+  isDragOver.value = false;
+
+  const files = event.dataTransfer?.files;
   if (files && files.length > 0) {
-    const file = files[0]
-    uploadSuccess.value = false
-    uploadResult.value = null
-    await composableHandleFileSelect(file)
+    const file = files[0];
+    uploadSuccess.value = false;
+    uploadResult.value = null;
+    await composableHandleFileSelect(file);
   }
-}
+};
 
 const removeFile = () => {
   if (fileInput.value) {
-    fileInput.value.value = ''
+    fileInput.value.value = "";
   }
-  uploadSuccess.value = false
-  uploadResult.value = null
-  composableHandleFileSelect(null)
-}
+  uploadSuccess.value = false;
+  uploadResult.value = null;
+  composableHandleFileSelect(null);
+};
 
 const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes'
-  const k = 1024
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
 
 // 包裝後的 performAnalysis 函數，加上上傳成功狀態
 const performAnalysis = async () => {
-  const result = await originalPerformAnalysis()
+  const result = await originalPerformAnalysis();
   if (result && analysisResults.value) {
     // 檢查是否有上傳資訊
     if (analysisResults.value.upload_info) {
-      uploadSuccess.value = true
-      uploadResult.value = analysisResults.value
+      uploadSuccess.value = true;
+      uploadResult.value = analysisResults.value;
     }
   }
-  return result
-}
+  return result;
+};
 
 onMounted(async () => {
-  await init()
-})
+  await init();
+});
 </script>
 
 <style scoped>
@@ -239,7 +253,8 @@ onMounted(async () => {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 .header {
@@ -328,7 +343,7 @@ onMounted(async () => {
   background: white;
   padding: 15px 25px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .file-name {
@@ -381,7 +396,7 @@ onMounted(async () => {
   background: white;
   padding: 15px;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   text-align: left;
 }
 
@@ -506,7 +521,7 @@ onMounted(async () => {
   display: flex;
   background: white;
   border-radius: 25px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
@@ -536,7 +551,7 @@ onMounted(async () => {
   background: white;
   border-radius: 12px;
   padding: 30px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .results-header {
@@ -556,7 +571,8 @@ onMounted(async () => {
   gap: 10px;
 }
 
-.export-btn, .clear-btn {
+.export-btn,
+.clear-btn {
   background: #74b9ff;
   color: white;
   border: none;
@@ -619,7 +635,7 @@ onMounted(async () => {
   padding: 20px;
   border-radius: 8px;
   overflow-x: auto;
-  font-family: 'Monaco', 'Consolas', monospace;
+  font-family: "Monaco", "Consolas", monospace;
   font-size: 0.9rem;
   line-height: 1.4;
   max-height: 400px;

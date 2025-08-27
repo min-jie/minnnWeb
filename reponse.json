@@ -175475,11 +175475,7 @@
         }
       ]
     },
-    "thresholds_used": [
-      0.5,
-      0.5,
-      0.5
-    ],
+    "thresholds_used": [0.5, 0.5, 0.5],
     "total_processed": 1596,
     "uncertain_cases": {
       "conflicting_labels": [],

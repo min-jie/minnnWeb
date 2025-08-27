@@ -13,7 +13,7 @@ const firebaseConfig = {
   storageBucket: "minnn-project.firebasestorage.app",
   messagingSenderId: "56180259453",
   appId: "1:56180259453:web:c567ae11bb435bc9088f14",
-  measurementId: "G-M7RY9GKRT0"
+  measurementId: "G-M7RY9GKRT0",
 };
 
 // Initialize Firebase
