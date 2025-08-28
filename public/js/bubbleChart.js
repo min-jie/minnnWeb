@@ -1,6 +1,7 @@
 /**
  * Bubble Chart 氣泡圖功能
  * 每個學生在四個品質指標位置各有一個氣泡
+ * Y軸按審查參與度排序，參與度越高位置越高
  */
 
 class BubbleChartManager {
@@ -119,7 +120,7 @@ class BubbleChartManager {
             type: 'linear',
             title: {
               display: true,
-              text: '學號',
+              text: '學號 (依審查參與度排序)',
               font: {
                 size: 14,
                 weight: 'bold'
@@ -222,11 +223,38 @@ class BubbleChartManager {
 
     // 首先獲取所有學生列表（從 'all' 模式獲取完整的學生列表）
     const { nodes: allNodes } = window.processReviewerData(rawData, 'all', hwNames);
-    const studentIds = allNodes.map(n => n.id);
     
-    // 按學號排序
-    const sortedStudentIds = [...studentIds].sort((a, b) => a.localeCompare(b.id));
-    console.log('學生列表:', sortedStudentIds);
+    // 計算每個學生的審查參與度並排序
+    const studentsWithParticipation = allNodes.map(n => {
+      const assignmentCount = n.feedbacks ? n.feedbacks.length : 0;
+      const completedAssignments = n.feedbacks ? n.feedbacks.filter((fb) => fb !== "").length : 0;
+      const participationRate = assignmentCount > 0 ? completedAssignments / assignmentCount : 0;
+      
+      return {
+        id: n.id,
+        participationRate: participationRate,
+        assignmentCount: assignmentCount,
+        completedAssignments: completedAssignments
+      };
+    });
+
+    // 按審查參與度排序（高到低）
+    // 如果參與度相同，再按學號排序
+    studentsWithParticipation.sort((a, b) => {
+      if (Math.abs(a.participationRate - b.participationRate) < 0.001) {
+        // 參與度相同時，按學號排序
+        return a.id.localeCompare(b.id);
+      }
+      // 參與度高的排在前面（Y軸值越大，顯示位置越高）
+      return b.participationRate - a.participationRate;
+    });
+
+    const sortedStudentIds = studentsWithParticipation.map(s => s.id);
+    
+    console.log('學生列表 (按參與度排序):', studentsWithParticipation.map(s => ({
+      id: s.id,
+      participationRate: (s.participationRate * 100).toFixed(1) + '%'
+    })));
 
     // 為每個模式獲取數據
     const modes = ['relevance', 'concreteness', 'constructive', 'all'];
@@ -250,7 +278,11 @@ class BubbleChartManager {
     };
 
     // 為每個學生在每個品質指標位置創建氣泡
-    sortedStudentIds.forEach((studentId, yIndex) => {
+    // Y軸索引從0開始，但在圖表中會反轉顯示（索引0顯示在底部，索引大顯示在頂部）
+    sortedStudentIds.forEach((studentId, sortedIndex) => {
+      // 計算 Y 軸位置：讓參與度最高的學生顯示在最上方
+      const yIndex = sortedStudentIds.length - 1 - sortedIndex;
+      
       modes.forEach((mode) => {
         const studentNode = modeData[mode][studentId];
         
@@ -258,7 +290,7 @@ class BubbleChartManager {
         if (!studentNode) {
           const defaultBubble = {
             x: xPositions[mode], // X軸: 品質指標位置
-            y: yIndex, // Y軸: 學生索引
+            y: yIndex, // Y軸: 學生索引 (反轉後參與度高的在上方)
             r: 3, // 最小氣泡大小
             backgroundColor: colorConfig[mode].colors[0],
             borderColor: colorConfig[mode].colors[0],
@@ -313,7 +345,7 @@ class BubbleChartManager {
 
         const bubble = {
           x: xPositions[mode], // X軸: 品質指標位置 (0, 1, 2, 3)
-          y: yIndex, // Y軸: 學生索引
+          y: yIndex, // Y軸: 學生索引 (反轉後參與度高的在上方)
           r: bubbleSize, // 氣泡大小: 基於參與度
           backgroundColor: color,
           borderColor: color,
@@ -331,12 +363,20 @@ class BubbleChartManager {
     const totalBubbles = Object.values(datasets).reduce((sum, data) => sum + data.length, 0);
     const expectedBubbles = sortedStudentIds.length * 4;
 
+    // 準備 Y 軸學號標籤（反轉順序，讓參與度高的顯示在上方）
+    const reversedStudentIds = [...sortedStudentIds].reverse();
+
     console.log('✅ 氣泡圖數據處理完成:', {
       studentsCount: sortedStudentIds.length,
       modesProcessed: modes.length,
       totalBubbles: totalBubbles,
       expectedBubbles: expectedBubbles,
-      isCorrect: totalBubbles === expectedBubbles
+      isCorrect: totalBubbles === expectedBubbles,
+      topStudents: studentsWithParticipation.slice(0, 3).map(s => ({
+        id: s.id,
+        participationRate: (s.participationRate * 100).toFixed(1) + '%',
+        note: '顯示在圖表頂部'
+      }))
     });
 
     return {
@@ -344,7 +384,7 @@ class BubbleChartManager {
       concretenessData: datasets.concretenessData,
       constructiveData: datasets.constructiveData,
       allData: datasets.allData,
-      studentIds: sortedStudentIds
+      studentIds: reversedStudentIds // 反轉順序用於 Y 軸標籤
     };
   }
 
