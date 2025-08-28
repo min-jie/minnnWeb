@@ -1,6 +1,6 @@
 /**
  * Bubble Chart 氣泡圖功能
- * 每個學生的四個品質指標氣泡排列在同一水平線上
+ * 每個學生在四個品質指標位置各有一個氣泡
  */
 
 class BubbleChartManager {
@@ -87,15 +87,27 @@ class BubbleChartManager {
         maintainAspectRatio: false,
         scales: {
           x: {
-            type: 'category',
+            type: 'linear',
             position: 'bottom',
-            labels: ['相關性', '具體性', '建設性', '綜合'],
             title: {
               display: true,
               text: '品質指標',
               font: {
                 size: 14,
                 weight: 'bold'
+              }
+            },
+            min: -0.5,
+            max: 3.5,
+            ticks: {
+              stepSize: 1,
+              callback: function(value) {
+                const labels = ['相關性', '具體性', '建設性', '綜合'];
+                const roundedValue = Math.round(value);
+                if (roundedValue >= 0 && roundedValue < labels.length) {
+                  return labels[roundedValue];
+                }
+                return '';
               }
             },
             grid: {
@@ -133,12 +145,7 @@ class BubbleChartManager {
         },
         plugins: {
           legend: {
-            display: true,
-            position: 'bottom',
-            labels: {
-              usePointStyle: true,
-              padding: 20
-            }
+            display: false, // 隱藏圖例，X軸已經顯示品質指標
           },
           tooltip: {
             callbacks: {
@@ -205,11 +212,6 @@ class BubbleChartManager {
       },
     };
 
-    // 為每個模式處理數據
-    const modes = ['relevance', 'concreteness', 'constructive', 'all'];
-    const datasets = {};
-    let studentIds = [];
-
     // X 軸位置對應 (0=相關性, 1=具體性, 2=建設性, 3=綜合)
     const xPositions = {
       'relevance': 0,
@@ -218,34 +220,82 @@ class BubbleChartManager {
       'all': 3
     };
 
+    // 首先獲取所有學生列表（從 'all' 模式獲取完整的學生列表）
+    const { nodes: allNodes } = window.processReviewerData(rawData, 'all', hwNames);
+    const studentIds = allNodes.map(n => n.id);
+    
+    // 按學號排序
+    const sortedStudentIds = [...studentIds].sort((a, b) => a.localeCompare(b.id));
+    console.log('學生列表:', sortedStudentIds);
+
+    // 為每個模式獲取數據
+    const modes = ['relevance', 'concreteness', 'constructive', 'all'];
+    const modeData = {};
+    
     modes.forEach(mode => {
       const { nodes } = window.processReviewerData(rawData, mode, hwNames);
-      const bubbleData = [];
+      // 將節點數據轉為以學號為 key 的對象，便於查找
+      modeData[mode] = {};
+      nodes.forEach(n => {
+        modeData[mode][n.id] = n;
+      });
+    });
 
-      nodes.forEach((n, index) => {
+    // 為每個品質指標創建數據集
+    const datasets = {
+      relevanceData: [],
+      concretenessData: [],
+      constructiveData: [],
+      allData: []
+    };
+
+    // 為每個學生在每個品質指標位置創建氣泡
+    sortedStudentIds.forEach((studentId, yIndex) => {
+      modes.forEach((mode) => {
+        const studentNode = modeData[mode][studentId];
+        
+        // 如果該學生在該模式下沒有數據，創建默認數據
+        if (!studentNode) {
+          const defaultBubble = {
+            x: xPositions[mode], // X軸: 品質指標位置
+            y: yIndex, // Y軸: 學生索引
+            r: 3, // 最小氣泡大小
+            backgroundColor: colorConfig[mode].colors[0],
+            borderColor: colorConfig[mode].colors[0],
+            participationRate: 0,
+            completedAssignments: 0,
+            totalAssignments: 0,
+            score: 0,
+            studentId: studentId
+          };
+          
+          datasets[mode + 'Data'].push(defaultBubble);
+          return;
+        }
+
         // 計算參與度 (與網路圖相同邏輯)
-        const assignmentCount = n.feedbacks ? n.feedbacks.length : 0;
-        const completedAssignments = n.feedbacks ? n.feedbacks.filter((fb) => fb !== "").length : 0;
+        const assignmentCount = studentNode.feedbacks ? studentNode.feedbacks.length : 0;
+        const completedAssignments = studentNode.feedbacks ? studentNode.feedbacks.filter((fb) => fb !== "").length : 0;
         const participationRate = assignmentCount > 0 ? completedAssignments / assignmentCount : 0;
 
         // 計算分數 (與網路圖相同邏輯)
-        const totalFeedbacks = n.feedbacks ? n.feedbacks.filter((fb) => fb !== "").length : 0;
+        const totalFeedbacks = studentNode.feedbacks ? studentNode.feedbacks.filter((fb) => fb !== "").length : 0;
         let score;
 
         if (mode === "all") {
           // All mode: 計算三個標籤score的平均
-          if (totalFeedbacks > 0 && n.labelCounts) {
-            const relevanceScore = (n.labelCounts.relevance || 0) / totalFeedbacks;
-            const concretenessScore = (n.labelCounts.concreteness || 0) / totalFeedbacks;
-            const constructiveScore = (n.labelCounts.constructive || 0) / totalFeedbacks;
+          if (totalFeedbacks > 0 && studentNode.labelCounts) {
+            const relevanceScore = (studentNode.labelCounts.relevance || 0) / totalFeedbacks;
+            const concretenessScore = (studentNode.labelCounts.concreteness || 0) / totalFeedbacks;
+            const constructiveScore = (studentNode.labelCounts.constructive || 0) / totalFeedbacks;
             score = (relevanceScore + concretenessScore + constructiveScore) / 3;
           } else {
             score = 0;
           }
         } else {
           // 單一標籤模式
-          if (totalFeedbacks > 0 && n.labelCounts && n.labelCounts[mode] !== undefined) {
-            score = n.labelCounts[mode] / totalFeedbacks;
+          if (totalFeedbacks > 0 && studentNode.labelCounts && studentNode.labelCounts[mode] !== undefined) {
+            score = studentNode.labelCounts[mode] / totalFeedbacks;
           } else {
             score = 0;
           }
@@ -261,14 +311,9 @@ class BubbleChartManager {
         // 計算氣泡大小 (基於參與度，讓參與度高的氣泡更大)
         const bubbleSize = 8 + participationRate * 15; // 8-23 的範圍，基於參與度
 
-        // 儲存學號 (只需要一次)
-        if (mode === 'relevance') {
-          studentIds.push(n.id);
-        }
-
-        bubbleData.push({
+        const bubble = {
           x: xPositions[mode], // X軸: 品質指標位置 (0, 1, 2, 3)
-          y: index, // Y軸: 學生索引
+          y: yIndex, // Y軸: 學生索引
           r: bubbleSize, // 氣泡大小: 基於參與度
           backgroundColor: color,
           borderColor: color,
@@ -276,36 +321,22 @@ class BubbleChartManager {
           completedAssignments: completedAssignments,
           totalAssignments: assignmentCount,
           score: score,
-          studentId: n.id
-        });
-      });
-
-      datasets[mode + 'Data'] = bubbleData;
-    });
-
-    // 按學號排序所有數據
-    const sortedIndices = studentIds
-      .map((id, index) => ({ id, index }))
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((item, newIndex) => ({ ...item, newIndex }));
-
-    const sortedStudentIds = sortedIndices.map(item => item.id);
-
-    // 為每個模式重新排序數據
-    modes.forEach(mode => {
-      const dataKey = mode + 'Data';
-      datasets[dataKey] = sortedIndices.map(item => {
-        const originalData = datasets[dataKey][item.index];
-        return {
-          ...originalData,
-          y: item.newIndex // 更新 Y 位置
+          studentId: studentId
         };
+
+        datasets[mode + 'Data'].push(bubble);
       });
     });
+
+    const totalBubbles = Object.values(datasets).reduce((sum, data) => sum + data.length, 0);
+    const expectedBubbles = sortedStudentIds.length * 4;
 
     console.log('✅ 氣泡圖數據處理完成:', {
       studentsCount: sortedStudentIds.length,
-      modesProcessed: modes.length
+      modesProcessed: modes.length,
+      totalBubbles: totalBubbles,
+      expectedBubbles: expectedBubbles,
+      isCorrect: totalBubbles === expectedBubbles
     });
 
     return {
