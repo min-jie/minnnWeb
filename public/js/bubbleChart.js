@@ -291,7 +291,7 @@ class BubbleChartManager {
           const defaultBubble = {
             x: xPositions[mode], // X軸: 品質指標位置
             y: yIndex, // Y軸: 學生索引 (反轉後參與度高的在上方)
-            r: 3, // 最小氣泡大小
+            r: 2, // 最小氣泡大小
             backgroundColor: colorConfig[mode].colors[0],
             borderColor: colorConfig[mode].colors[0],
             participationRate: 0,
@@ -341,7 +341,7 @@ class BubbleChartManager {
         else color = colorConfig[mode].colors[0]; // 最淺色 (25%以下)
 
         // 計算氣泡大小 (基於參與度，讓參與度高的氣泡更大)
-        const bubbleSize = 8 + participationRate * 15; // 8-23 的範圍，基於參與度
+        const bubbleSize = 3 + participationRate * 10; // 3-13 的範圍，基於參與度
 
         const bubble = {
           x: xPositions[mode], // X軸: 品質指標位置 (0, 1, 2, 3)
