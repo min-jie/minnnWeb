@@ -13,7 +13,7 @@ class BubbleChartManager {
   }
 
   init(rawData, mode = 'all') {
-    console.log('🫧 初始化氣泡圖...', { mode, dataKeys: Object.keys(rawData || {}) });
+    console.log('🫧 初始化氣泡圖...', { mode, dataKeys: Object.keys(rawData || {}) }); 
     
     if (!rawData || Object.keys(rawData).length === 0) {
       console.warn('⚠️ 無數據可顯示氣泡圖');
